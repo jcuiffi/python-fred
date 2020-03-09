@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="resources/">
+    <file>images/static_angleview_01.JPG</file>
+  </qresource>
+</RCC>
