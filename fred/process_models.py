@@ -59,11 +59,11 @@ class ProcessTwin(threading.Thread):
         self.lock = threading.Lock()
 
         # FrED parameters
-        self.STEP_FEED_PITCH_D = 8.98       # mm
-        self.FIL_FEED_R = 3.175             # mm
-        self.NOZZLE_R = 2.54                # mm
-        self.SPOOL_D = 25.4                 # mm
-        self.SPOOL_W = 76.2                 # mm    
+        self.STEP_FEED_PITCH_D = 18.5       # mm
+        self.FIL_FEED_R = 3.5               # mm
+        self.NOZZLE_R = 1.5                 # mm
+        self.SPOOL_D = 20.0                 # mm
+        self.SPOOL_W = 40.0                 # mm    
         # "actuator" settings
         self._htr_pwr = 0.0                  # 0.0-1.0 (0.0-100.0%)
         self._feed_freq = 0.0                # steps/s
@@ -79,7 +79,7 @@ class ProcessTwin(threading.Thread):
         self._fiber_len = 0.0                # mm
         # model parameters
         self.is_running = False             # bool
-        self.interval = .01                 # sec
+        self.interval = .1                  # sec
         self.cur_time = None                # sec UNIX time
         self.prev_time = None               # sec UNIX time
         self.debug_log_interval = 1.0       # sec UNIX time
@@ -268,21 +268,23 @@ class BasicStateTwin(ProcessTwin):
 
     def __init__(self):
         ProcessTwin.__init__(self)
-        
+
+    def calc_spool_speed(self, feed = 0.0, fdia = 0.0):
+        if feed > 0.0 and fdia > 0.0:
+            return ((feed * 6.73**2) / fdia**2)
+        else:
+            return 0.0
+
     def model(self):
         # check for proper run conditions        
-        if (self._htr_temp >= 90.0):
+        if (self._htr_temp >= 75.0):
             if (self._feed_freq > 0.0):
                 self._feed_speed = self._feed_freq / 3200.0
-                # equations from article
-                v1 = (self.STEP_FEED_PITCH_D * math.pi * self._feed_speed)
-                v2 = v1 * (self.FIL_FEED_R**2 / self.NOZZLE_R**2)
                 if (self._spool_speed > 0.0):
-                    v3 = math.pi * self.SPOOL_D * self._spool_speed
-                    self._fiber_dia = 2 * self.FIL_FEED_R * math.sqrt(v2 / v3)
-                    if (self._fiber_dia > (self.FIL_FEED_R * 2.0)):
-                        self._fiber_dia = self.FIL_FEED_R * 2.0
-                    self._fiber_len += v3 * (self.cur_time - self.prev_time)
+                    self._fiber_dia = 6.73 * math.sqrt(self._feed_speed /
+                                                        self._spool_speed)
+                    vspool = self._spool_speed * self.SPOOL_D * math.pi
+                    self._fiber_len += vspool * (self.cur_time - self.prev_time)
                 else:
                     self._fiber_dia = self.NOZZLE_R * 2.0
             else:
@@ -290,11 +292,10 @@ class BasicStateTwin(ProcessTwin):
         else:
             self._feed_freq = 0.0
             self._feed_speed = 0.0
-            self._spool_speed = 0.0
             self._fiber_dia = 0.0
-        # placeholder for power consumption
+        # nominal power consumption
         if (self._htr_temp > 20.0):
-            self._sys_power = 10.0
+            self._sys_power = 27.0
         
 class BasicDynamicTwin(ProcessTwin):
     """
