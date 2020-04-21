@@ -12,7 +12,6 @@ import logging
 import process_models
 import serial
 import threading
-import simple_pid
 import time
 import math
 
@@ -63,6 +62,7 @@ class Control(threading.Thread):
         self._htr_set_pwr = 0.0             # 0.0-1.0 (0.0-100.0%)
         self._feed_set_freq = 0.0           # steps/s
         self._spool_set_pwr = 0.0           # 0.0-1.0 (0.0-100.0%)
+        self.wind_set_freq = 0.0
         # process parameters
         self.is_running = False             # bool
         self.interval = .1                  # sec
@@ -248,25 +248,25 @@ class BasicPIDDynamicTwin(Control):
         Control.__init__(self)
         
         self.twin = twin
-        self.tempPID = simple_pid.PID(0.8,0.4,0.1,
-                        sample_time=None,output_limits=(0.0,1.0))
-        self.diaPID = simple_pid.PID(1.0,1.0,0.0,
-                        sample_time=None,output_limits=(0.0,.99))
+        #self.tempPID = simple_pid.PID(0.8,0.4,0.1,
+        #                sample_time=None,output_limits=(0.0,1.0))
+        #self.diaPID = simple_pid.PID(1.0,1.0,0.0,
+        #                sample_time=None,output_limits=(0.0,.99))
 
     def update(self):
-        self.tempPID.setpoint = self._htr_set_temp
-        self.twin.htr_pwr = self._htr_set_pwr = self.tempPID(self.twin.htr_temp)
+        #self.tempPID.setpoint = self._htr_set_temp
+        #self.twin.htr_pwr = self._htr_set_pwr = self.tempPID(self.twin.htr_temp)
         if (self.twin.htr_temp >= 80.0):
             self.twin.feed_freq = self._feed_set_freq = (
                                         self._feed_set_speed * 3200.0) 
-            self.diaPID.setpoint = self._fiber_set_dia
-            self.twin.spool_pwr = self._spool_set_pwr = (1.0 - 
-                                  (self.diaPID(self.twin.fiber_dia)))
+            #self.diaPID.setpoint = self._fiber_set_dia
+            #self.twin.spool_pwr = self._spool_set_pwr = (1.0 - 
+            #                      (self.diaPID(self.twin.fiber_dia)))
         else:
             self.twin.feed_freq = 0.0
             self.twin.spool_pwr = 0.0
 
-class ManualPIDDynamicTwin(Control):
+class ManualDynamicTwin(Control):
     """
     Runnable FrED control algorithm that uses PID for heater temperature, and
     manual control of feed speed and spool speed. 
@@ -285,29 +285,104 @@ class ManualPIDDynamicTwin(Control):
 
     def __init__(self, twin=process_models.BasicDynamicTwin()):
         Control.__init__(self)
-        
         self.twin = twin
-        self.tempPID = simple_pid.PID(0.8,0.4,0.1,
-                        sample_time=None,output_limits=(0.0,1.0))
-        
+        self.interval=.1           # sec
+        # control parameters
+        self.htrP = 0.0             # .04
+        self.htrI = 0.0             # .0005
+        self.htrD = 0.0
+        self.htrPIDint = .5         # sec
+        self.htrPID_last_time = 0.0
+        self.tempPID = pid1()
+        self.tempPID.iomax = 1.0    # .3  
+        self.spoolP = 0.0           # .1
+        self.spoolI = 0.0           # .5
+        self.spoolD = 0.0
+        self.spoolPIDint = .25      # sec
+        self.spoolPID_last_time = 0.0
+        self.spoolPID = pid1()
+        self.spool_cur_dia = 20.0   # mm
+        self.wind_set_freq = 0.0
+        self.wind_count = 1    
+        self.fibP = 0.0
+        self.fibI = 0.0
+        self.fibD = 0.0
+        self.fibPIDint = .5         # sec
+        self.fibPID = pid1()
+
+    def setFibPID(self, start=True):
+        pass
+
+    def setHtrPID(self, start=True):
+        if start:
+            self.tempPID.time_last = self.htrPID_last_time = time.time()
+            self.tempPID.current_val_last = self.twin.htr_temp
+            self.tempPID.iomin = 0.0
+            self.tempPID.io = 0.0
+            self.tempPID.is_running = True
+        else:
+            self.tempPID.is_running = False
+
+    def setSpoolPID(self, start=True):
+        if start:
+            self.spoolPID.time_last = self.spoolPID_last_time = time.time()
+            self.spoolPID.current_val_last = self.twin.spool_speed
+            self.spoolPID.iomin = 0.0
+            self.spoolPID.io = 0.0
+            self.spoolPID.out_max_ch = .5
+            self.spoolPID.is_running = True
+        else:
+            self.spoolPID.is_running = False
+
+    def sendSpoolWind(self, auto = False):
+        self.is_msg_wind = True
+        if auto:
+            self.is_auto_wind = True
+            self.wind_set_freq = self.calcWind(2)
+        else:
+            self.is_auto_wind = False
+
+    def calcWind(self, method = 1):
+        if method == 1:
+            return self.spool_set_pwr * 300.0
+        elif method == 2:
+            if self._spool_set_speed > 0.0:
+                return 600.0 * self._spool_set_speed * 6.732 * math.sqrt(self.twin.feed_speed / self._spool_set_speed)
+            else:
+                return 0.0
+        else:
+            return 0.0
+
     def update(self):
-        self.tempPID.setpoint = self._htr_set_temp
-        self.twin.htr_pwr = self._htr_set_pwr = self.tempPID(self.twin.htr_temp)
-        if (self.twin.htr_temp >= 80.0):
+        
+        if self.tempPID.is_running:
+            if time.time() > (self.htrPID_last_time + self.htrPIDint):
+                self.htr_set_pwr = self.tempPID.calc_output(self.htrP, self.htrI, self.htrD, 
+                                                self.htr_set_temp,self.twin.htr_temp)
+                self.htrPID_last_time = time.time()
+        self.twin.htr_pwr = self.htr_set_pwr
+        
+        if self.spoolPID.is_running:
+            if time.time() > (self.spoolPID_last_time + self.spoolPIDint):
+                if self.spool_set_speed > 0.0:
+                    self.spool_set_pwr = self.spoolPID.calc_output(self.spoolP, self.spoolI, self.spoolD, 
+                                                    self.spool_set_speed,self.twin.spool_speed)
+                self.spoolPID_last_time = time.time()
+        self.twin.spool_pwr = self._spool_set_pwr
+        
+        if (self.twin.htr_temp >= 75.0):
             self.twin.feed_freq = self._feed_set_freq = (
                                         self._feed_set_speed * 3200.0) 
-            self.twin.spool_pwr = self._spool_set_pwr = (self._spool_set_speed /
-                                                         1.5)
         else:
             self.twin.feed_freq = 0.0
-            self.twin.spool_pwr = 0.0
 
 class ManualStateTwin(Control):
     """
     Runnable FrED control algorithm that simply passes along set values for
-    manual control of the Basic State Model.
+    manual control of the Basic or Regression State Model.
 
-    Note: Set htr_set_temp, feed_set_speed, and spool_set_speed
+    Note: Set htr_set_temp, feed_set_speed, and spool_set_speed, or fiber_set_dia
+          You must manually start/stop process thread.
  
     Attributes
     ----------
@@ -320,8 +395,9 @@ class ManualStateTwin(Control):
 
     def __init__(self, twin=process_models.BasicStateTwin()):
         Control.__init__(self)
-        
         self.twin = twin
+        self.interval=.1            # sec
+        self.calc_spool = False
 
     def update(self):
         self.twin.htr_temp = self._htr_set_temp
@@ -330,41 +406,11 @@ class ManualStateTwin(Control):
                                             self._feed_set_speed * 3200.0) 
         else:
             self.twin.feed_freq = 0.0
-        self.twin.spool_speed = self._spool_set_speed
-
-class CalcDiaStateTwin(Control):
-    """
-    Runnable FrED control algorithm that calculates spool speed for a set fiber 
-    diamter, and passes along heater and feed set values.
-
-    Note: Set htr_set_temp, feed_set_speed, and fiber_set_dia
- 
-    Attributes
-    ----------
-        twin (BasicDynamicTwin): Simulation model.
-        
-    Methods
-    -------
-        update (): Updates control values.
-    """
-
-    def __init__(self, twin=process_models.BasicStateTwin()):
-        Control.__init__(self)
-
-        self.twin = twin
-
-    def update(self):
-        # TODO here
-        self.twin.htr_temp = self._htr_set_temp
-        self.twin.feed_freq = self._feed_set_freq = (
-                                        self._feed_set_speed * 3200.0) 
-        if (self._fiber_set_dia > 0.0) :
-            self.twin.spool_speed = self._spool_set_speed = (
-                (self._feed_set_speed * self.twin.STEP_FEED_PITCH_D * 4 *
-                self.twin.FIL_FEED_R**4) / (self.twin.SPOOL_D * 
-                self._fiber_set_dia**2 * self.twin.NOZZLE_R**2))
+        if self.calc_spool:
+            self.twin.spool_speed = self.twin.calc_spool_speed(
+                feed=self._feed_set_speed, fdia = self._fiber_set_dia)
         else:
-            self.twin.spool_speed = self._spool_set_speed = 0.0
+            self.twin.spool_speed = self._spool_set_speed
 
 class ManualDAQ(Control):
     def __init__(self):
@@ -412,7 +458,6 @@ class ManualDAQ(Control):
         self.step_current = 0.0 # mA
         self.sys_power = 0.0    # W
         self.sys_energy = 0.0   # Wh
-        self.wind_count = 1
         # testing values
         self.time1 = 0
         self.time2 = 0
@@ -514,6 +559,7 @@ class ManualDAQ(Control):
         self.is_auto_wind = False
         self.fiber_len = 0.0
         self.sys_energy = 0.0
+        self.wind_set_freq = 0.0
 
     def sendStop(self):
         self.is_msg_stop = True
@@ -543,7 +589,7 @@ class ManualDAQ(Control):
         #                   .format(self._spool_set_pwr))
 
     def update(self):
-        # TODO may need ot overrride run to handle disconnections/connections and stop
+        # TODO may need to overrride run to handle disconnections/connections and stop
         self.time1 = time.time()
         if self.is_first_update:
             self.update_last_time = time.time()
@@ -695,21 +741,6 @@ class pid1():
                 out = self.out_last + self.out_max_ch
         self.out_last = out
         return out
-
-def readserialln(ser):
-    buf = bytearray()
-    j = 0
-    while True and j < 100000:
-        i = ser.in_waiting
-        if i > 0:
-            buf += ser.read(i)
-            if buf.find(b'\r\n') > 0:
-                #print(j)
-                ser.reset_input_buffer()
-                return buf
-        j += 1
-    ser.reset_input_buffer()
-    return bytearray() # didn't find message
 
 if __name__ == "__main__":
     # for testing

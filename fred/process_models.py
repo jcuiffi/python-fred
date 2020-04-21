@@ -37,7 +37,7 @@ class ProcessTwin(threading.Thread):
         fiber_dia (float): Fiber diameter, 0.0-nozzle diameter (mm).
         sys_power (float)(read only): System power (W).
         sys_energy (float)(read only): Cumulative simulation energy use (Wh).
-        fiber_len (float)(read only): Cumulative fiber length on spool (mm).
+        fiber_len (float)(read only): Cumulative fiber length on spool (m).
         - Simulation settings
         is_Running (bool): Stay in main running loop. Set to False to stop run.
         interval (float)(default=.01): Interval between simulation calculation
@@ -73,7 +73,13 @@ class ProcessTwin(threading.Thread):
         self._feed_speed = 0.0               # RPS
         self._spool_speed = 0.0              # RPS
         self._fiber_dia = 0.0                # mm
+        self._fiber_dia_stdev = 0.0          # mm
+        self._htr_current = 0.0              # mA
+        self._spool_current = 0.0            # mA
+        self._step_current = 0.0             # mA
         self._sys_power = 0.0                # W
+        self.wind_dir = 0                   
+        self.wind_count = 1 
         # accumulated values
         self._sys_energy = 0.0               # Wh
         self._fiber_len = 0.0                # mm
@@ -193,6 +199,22 @@ class ProcessTwin(threading.Thread):
             self._fiber_dia = value
 
     @property
+    def fiber_dia_stdev(self):
+        return self._fiber_dia_stdev
+
+    @property
+    def htr_current(self):
+        return self._htr_current
+    
+    @property
+    def spool_current(self):
+        return self._spool_current
+
+    @property
+    def step_current(self):
+        return self._step_current
+
+    @property
     def sys_power(self):
         return self._sys_power
     
@@ -256,7 +278,7 @@ class ProcessTwin(threading.Thread):
 class BasicStateTwin(ProcessTwin):
     """
     Thread class that defines a runnable FrED process digital twin. 
-    Basic time-independent state based model using mass conservation
+    Basic time-independent analytical state based model using mass conservation
     From MIT - DSCC 2017, D. Kim, B. Anthony
 
     Note: Set htr_temp, feed_freq or feed_speed, and spool_speed directly.
@@ -268,7 +290,9 @@ class BasicStateTwin(ProcessTwin):
 
     def __init__(self):
         ProcessTwin.__init__(self)
+        self.interval = .05                  # sec
 
+    # calculates a spool speed based on a desired fiber diameter
     def calc_spool_speed(self, feed = 0.0, fdia = 0.0):
         if feed > 0.0 and fdia > 0.0:
             return ((feed * 6.73**2) / fdia**2)
@@ -283,7 +307,7 @@ class BasicStateTwin(ProcessTwin):
                 if (self._spool_speed > 0.0):
                     self._fiber_dia = 6.73 * math.sqrt(self._feed_speed /
                                                         self._spool_speed)
-                    vspool = self._spool_speed * self.SPOOL_D * math.pi
+                    vspool = self._spool_speed * self.SPOOL_D * math.pi / 1000.0
                     self._fiber_len += vspool * (self.cur_time - self.prev_time)
                 else:
                     self._fiber_dia = self.NOZZLE_R * 2.0
@@ -293,10 +317,57 @@ class BasicStateTwin(ProcessTwin):
             self._feed_freq = 0.0
             self._feed_speed = 0.0
             self._fiber_dia = 0.0
-        # nominal power consumption
-        if (self._htr_temp > 20.0):
-            self._sys_power = 27.0
-        
+        # TODO power consumption
+
+class RegressionStateTwin(ProcessTwin):
+    """
+    Thread class that defines a runnable FrED process digital twin. 
+    Time-independent empirical state based model based on historical run
+    data and regression models. Spool diameter does not change.
+
+    Note: Set htr_temp, feed_freq or feed_speed, and spool_speed directly.
+ 
+    Methods
+    -------
+        model (): Updates model values.
+    """
+
+    def __init__(self):
+        ProcessTwin.__init__(self)
+
+    # calculates a spool speed based on a desired fiber diameter
+    def calc_spool_speed(self, feed = 0.0, fdia = 0.0):
+        if feed > 0.0 and fdia > 0.0:
+            return ((feed * 6.38896**2) / (fdia - .011145)**2)
+        else:
+            return 0.0
+
+    def model(self):
+        # check for proper run conditions        
+        if (self._htr_temp >= 75.0):
+            if (self._feed_freq > 0.0):
+                self._feed_speed = self._feed_freq / 3200.0
+                if (self._spool_speed > 0.0):
+                    self._fiber_dia = ((6.38896 * math.sqrt(self._feed_speed /
+                                        self._spool_speed)) + .011145)
+                    vspool = self._spool_speed * self.SPOOL_D * math.pi / 1000.0
+                    self._fiber_len += vspool * (self.cur_time - self.prev_time)
+                else:
+                    self._fiber_dia = self.NOZZLE_R * 2.0
+            else:
+                self._fiber_dia = 0.0
+        else:
+            self._feed_freq = 0.0
+            self._feed_speed = 0.0
+            self._fiber_dia = 0.0
+        # power consumption
+        self._htr_current = ((34.1 * self._htr_temp) - 1188.0 + 
+                                ((self._feed_speed / .005) * 130.0))
+        self._spool_current = (self._spool_speed / 1.5) * 182.8
+        self._step_current = 509.0
+        self._sys_power = (self._htr_current + self._spool_current + self._step_current) * .012
+        self._sys_energy += self._sys_power * (self.cur_time - self.prev_time) / 3600.0
+
 class BasicDynamicTwin(ProcessTwin):
     """
     Thread class that defines a runnable FrED process digital twin. 
@@ -368,7 +439,120 @@ class BasicDynamicTwin(ProcessTwin):
         # power consumption
         self._sys_power = ((40.0 * self._htr_pwr) + 2.0 + 
                           (.002 * self._feed_freq) + (24.0 * self._spool_pwr))
-        
+
+class RegressionDynamicTwin(ProcessTwin):
+    """
+    Thread class that defines a runnable FrED process digital twin. 
+    Empirical physical based model based on historical run
+    data and regression models.
+
+    Note: Set htr_pwr, feed_freq, and spool_pwr or PID for any.
+ 
+    Attributes
+    ----------
+        MC (float): Heat transfer constant.
+        spool_cur_dia (float): Current spool diameter with fiber coil (mm).
+        wind_prev_len (float): Length of fiber at previous complete winding
+                               level (mm).
+        wind_dist (float): Length of fiber required to compelete next winding
+                           (mm).
+    Methods
+    -------
+        model (): Updates model values.
+    """
+
+    def __init__(self):
+        ProcessTwin.__init__(self)
+        # parameters for tracking spool diameter changes
+        self.mc = .68                       # heater model constant
+        self.ha = .0026                     # heater model constant
+        self.htr_pwr_delay = 26.0               # sec
+        self.wind_factor = 1.0              # diameter % based on wind count
+        self.spool_cur_dia = self.SPOOL_D   # mm
+        self.wind_prev_len = 0.0            # mm
+        self.wind_dist = math.pi * self.spool_cur_dia * 50.0   # mm
+        self.htr_temp_last = self._htr_temp
+        self.wind_freq = 0.0
+        self.wind_count = 1
+        self.interval = .1
+        self.htr_pwr_o = 0.0
+        self.htr_pwr_target = 0.0
+        self.htr_pwr_delta = 0.0
+        self.htr_pwr_cur = 0.0
+        self.htr_pwr_ch_time = 0.0
+
+
+    # calculates a spool speed based on a desired fiber diameter
+    def calc_spool_speed(self, feed = 0.0, fdia = 0.0):
+        if feed > 0.0 and fdia > 0.0:
+            return ((feed * 6.38896**2) / (fdia - .011145)**2)
+        else:
+            return 0.0
+
+    def model(self):
+        # heater model
+        # delay
+        if self._htr_pwr != self.htr_pwr_target:
+            self.htr_pwr_o = self.htr_pwr_cur
+            self.htr_pwr_target = self._htr_pwr
+            self.htr_pwr_delta = self.htr_pwr_target - self.htr_pwr_o
+            self.htr_pwr_ch_time = self.cur_time
+        if self.htr_pwr_cur != self.htr_pwr_target:
+            if self.cur_time >= (self.htr_pwr_delay + self.htr_pwr_ch_time):
+                self.htr_pwr_cur = self.htr_pwr_target
+            else:
+                self.htr_pwr_cur = ((self.cur_time - self.htr_pwr_ch_time) / self.htr_pwr_delay) * self.htr_pwr_delta + self.htr_pwr_o
+                if self.htr_pwr_delta > 0:
+                    if self.htr_pwr_cur > self.htr_pwr_target:
+                        self.htr_pwr_cur = self.htr_pwr_target
+                if self.htr_pwr_delta < 0:
+                    if self.htr_pwr_cur < self.htr_pwr_target:
+                        self.htr_pwr_cur = self.htr_pwr_target 
+        #print(self.htr_pwr_cur)
+        # heat eq
+        self._htr_temp = self.htr_temp_last + ((self.cur_time - self.prev_time) * 
+                            ((self.htr_pwr_cur * self.mc) - 
+                            (self.ha * (self.htr_temp_last - 20.0))))
+        if self._htr_temp < 20.0:
+            self._htr_temp = 20.0
+        self.htr_temp_last = self._htr_temp
+        # TODO motor model
+        self._spool_speed = self._spool_pwr * 1.5
+        # check for proper run conditions
+        if (self._htr_temp >= 75.0):
+            if (self._feed_freq > 0.0):
+                self._feed_speed = self._feed_freq / 3200.0
+                if (self._spool_speed > 0.0):
+                    # TODO fiber dynamic model
+                    self._fiber_dia = (((6.38896 * math.sqrt(self._feed_speed /
+                                        self._spool_speed)) + .011145) * self.wind_factor)
+                    # set a b/f winding speed - TODO use set spool speed
+                    self.wind_freq = 600.0 * self._spool_speed * 6.732 * math.sqrt(self._feed_speed / self._spool_speed)
+                    self.wind_prev_len += self.wind_freq * .0025 * (self.cur_time - self.prev_time)
+                    # using regression for now - TODO base on wind diameter
+                    if self.wind_prev_len >= self.SPOOL_W:
+                        self.wind_prev_len = 0.0
+                        self.wind_count += 1
+                        #self.spool_cur_dia += self._fiber_dia * 2.0 * self.wind_factor
+                        self.wind_factor = 1.0 - (0.0054695 * (self.wind_count - 1)) 
+                    # total fiber length
+                    self._fiber_len += (self._feed_speed * 2.848 * (self.cur_time - self.prev_time)) / self._fiber_dia**2
+                else:
+                    self._fiber_dia = self.NOZZLE_R * 2.0
+            else:
+                self._fiber_dia = 0.0
+        else:
+            self._feed_freq = 0.0
+            self._feed_speed = 0.0
+            self._fiber_dia = 0.0
+        # power consumption
+        # TODO - replace with heater power?
+        self._htr_current = self._htr_pwr * 6400.0
+        self._spool_current = (self._spool_speed / 1.5) * 182.8
+        self._step_current = 509.0
+        self._sys_power = (self._htr_current + self._spool_current + self._step_current) * .012
+        self._sys_energy += self._sys_power * (self.cur_time - self.prev_time) / 3600.0
+
 if __name__ == "__main__":
     # for testing
     logging.basicConfig(level=logging.DEBUG)

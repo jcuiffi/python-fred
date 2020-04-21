@@ -1,8 +1,8 @@
 """
-GUI control window for fullmanual FrED process control. Imports 
-'fredmanGUIwin.py' created with QTDesigner - 'fredmanGUIwin.ui'
+GUI control window for full FrED twin simulation. Imports 
+'fredfulltwinGUIwin.py' created with QTDesigner - 'fredfulltwinGUIwin.ui'
 
-Note: Use ">pyuic5 --from-imports fredmanGUIwin.ui -o fredmanGUIwin.py" for 
+Note: Use ">pyuic5 --from-imports fredfulltwinGUIwin.ui -o fredfulltwinGUIwin.py" for 
       conversion in the resources folder. Use ">pyrcc5 res_file.qrc -o 
       res_file_rc.py" to recompile the resources file.
 
@@ -11,7 +11,7 @@ Author - J. Heim, J. Cuiffi, Penn State University
 """
 
 from PyQt5 import QtWidgets, QtCore
-from resources.fredmanGUIwin import Ui_MainWindow
+from resources.fredfulltwinGUIwin import Ui_MainWindow
 import logging
 import process_models
 import control_models
@@ -19,6 +19,7 @@ import sys
 import csv
 import time
 from datetime import datetime
+import pyqtgraph
 
 class fredwin(QtWidgets.QMainWindow):
 
@@ -26,11 +27,13 @@ class fredwin(QtWidgets.QMainWindow):
         super(fredwin,self).__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-        # set manual control as base model
-        self.ctrl = control_models.ManualDAQ()
-        # add controls to drop down list
+        # set basic state twin as base model
+        self.ctrl = control_models.ManualStateTwin(process_models.BasicStateTwin())
+        # add models to drop down list
         self.ui.ctrlOpts.currentIndexChanged.connect(self.updateControl)
-        self.ui.ctrlOpts.addItems(['Manual Control'])
+        self.ui.ctrlOpts.addItems(['Basic State Twin',
+                                   'Regression State Twin',
+                                   'Regression Dynamic Twin'])
         self.ui.ctrlOpts.setCurrentIndex(0)
         # text elements
         self.ui.controlInterval.setText('0.500')
@@ -57,17 +60,19 @@ class fredwin(QtWidgets.QMainWindow):
         self.ui.broadcastPeriodSet.setText('1.000')
         self.ui.broadcastPeriodSet.editingFinished.connect(self.onOutIntCh)
         self.ui.filepathRead.setText('./')
-        self.ui.mqttTopic.setText('fred/data')
-        self.ui.commESP.setText('COM5')
-        self.ui.commMicro.setText('COM4')
+        self.ui.mqttTopic.setText('fred/twin/data')
         # check boxes
         self.ui.htrPIDCheck.stateChanged.connect(self.onHtrPIDChkCh)
         self.ui.spoolPIDCheck.stateChanged.connect(self.onSpoolPIDChkCh)
         self.ui.autoDiaCheck.stateChanged.connect(self.onFibPIDChkCh)
+        self.ui.broadcastMQTTCheck.setEnabled(False)
         self.ui.broadcastMQTTCheck.stateChanged.connect(self.onMqttCh)
         self.ui.broadcastOPCCheck.setEnabled(False)
         self.ui.windAutoCheck.stateChanged.connect(self.onSetWindAuto)
         self.ui.dataLogCheck.stateChanged.connect(self.onLogChkCh)
+        self.ui.HtrPlotChk.stateChanged.connect(self.onHtrPlotChkCh)
+        self.ui.FibPlotChk.stateChanged.connect(self.onFibPlotChkCh)
+        self.ui.SpoolPlotChk.stateChanged.connect(self.onSpoolPlotChkCh)
         # TODO - add OPC functions
         # buttons
         self.ui.htrSetButton.clicked.connect(self.onSetHtr)
@@ -82,11 +87,6 @@ class fredwin(QtWidgets.QMainWindow):
         self.ui.startButton.clicked.connect(self.onStart)
         self.ui.stopButton.clicked.connect(self.onStop)
         self.ui.stopButton.setEnabled(False)
-        self.ui.initButton.clicked.connect(self.onInit)
-        self.ui.initButton.setEnabled(False)
-        self.ui.stopoutButton.clicked.connect(self.onStopOutputs)
-        self.ui.stopoutButton.setEnabled(False)
-
         # GUI Updates
         self.outInterval = float(self.ui.broadcastPeriodSet.text())
         self.filepath = ''
@@ -102,6 +102,19 @@ class fredwin(QtWidgets.QMainWindow):
         self.log_timestamp = 0.0
         self.mqtt_timer = QtCore.QTimer()
         self.mqtt_timer.timeout.connect(self.mqttData)
+        # plot setup
+        self.plot_timer = QtCore.QTimer()
+        self.plot_timer.timeout.connect(self.updatePlot)
+        self.ui.graphWidget.setBackground('w')
+        self.ui.graphWidget.setLabel('bottom', 'Time (s)')
+        self.yPlotVals = [0] * 200
+        self.ui.graphWidget.setYRange(0.0,1.0)
+        self.xPlotVals = [0] * 200
+        self.ui.graphWidget.setXRange(-100.0,0.0)
+        self.ui.graphWidget.showGrid(x=True, y=True)
+        self.plotLine = None
+        self.plotPen = None
+        self.plotTimestamp = 0.0
         # TODO OPC
         #self.opc_timer = QtCore.QTimer()
         #self.opc_timer.timeout.connect(self.opcData)
@@ -110,29 +123,26 @@ class fredwin(QtWidgets.QMainWindow):
 
     def onStart(self):
         self.ui.messageWindow.appendPlainText('Starting Process Control... ' + type(self.ctrl).__name__)
-        self.ui.messageWindow.appendPlainText('Connecting to FrED...')
-        if self.ctrl.connect(self.ui.commESP.text(), self.ui.commMicro.text()):
-            self.ui.messageWindow.appendPlainText('Starting Control Threads...')
-            self.ctrl.start()
-            self.update_timer.start(self.update_actual_interval * 1000)
-            # clean up GUI
-            self.ui.controlInterval.setEnabled(False)
-            self.ui.htrSetButton.setEnabled(True)
+        self.ui.messageWindow.appendPlainText('Starting FrED Twin Threads...')
+        self.ctrl.twin.start()
+        self.ui.messageWindow.appendPlainText('Starting Control Threads...')
+        self.ctrl.is_running = True
+        self.ctrl.start()
+        self.update_timer.start(self.update_actual_interval * 1000)
+        # clean up GUI
+        self.ui.controlInterval.setEnabled(False)
+        self.ui.htrSetButton.setEnabled(True)
+        self.ui.feedSetButton.setEnabled(True)
+        self.ui.spoolSetButton.setEnabled(True)
+        self.onFibPIDChkCh()
+        if self.ui.ctrlOpts.currentText() == 'Regression Dynamic Twin':
             self.onHtrPIDChkCh()
-            self.ui.feedSetButton.setEnabled(True)
             self.onSpoolPIDChkCh()
-            self.ui.spoolSetButton.setEnabled(True)
-            self.onFibPIDChkCh()
             self.ui.windButton.setEnabled(True)
-            self.ui.startButton.setEnabled(False)
-            self.ui.ctrlOpts.setEnabled(False)
-            self.ui.stopButton.setEnabled(True)
-            self.ui.initButton.setEnabled(True)
-            self.ui.stopoutButton.setEnabled(True)
-        else:
-            self.ui.messageWindow.appendPlainText('Cannot connect to FrED. Aborting.')
-            self.onStop()
-
+        self.ui.startButton.setEnabled(False)
+        self.ui.ctrlOpts.setEnabled(False)
+        self.ui.stopButton.setEnabled(True)
+        
     def onStop(self):
         if self.mqtt_timer.isActive():
             self.ui.messageWindow.appendPlainText('Stopping MQTT Broadcast.')
@@ -147,18 +157,17 @@ class fredwin(QtWidgets.QMainWindow):
             self.log_timer.timeout.connect(self.logData)
         self.ui.messageWindow.appendPlainText('Stopping Update Threads...')
         self.update_timer.stop()
-        self.ui.messageWindow.appendPlainText('Stopping FrED Outputs...')
-        self.onStopOutputs()
+        self.ui.messageWindow.appendPlainText('Stopping FrED Twin...')
+        if self.ctrl.twin.is_running:
+            self.ctrl.twin.is_running = False
+            self.ctrl.twin.join()
         if self.ctrl.is_running:
             self.ctrl.is_running = False
             self.ctrl.join()
-            self.ui.messageWindow.appendPlainText('Disconnecting from FrED...')
-            if self.ctrl.disconnect():
-                self.ui.messageWindow.appendPlainText('Process Run Complete.')
+            self.ui.messageWindow.appendPlainText('Process Run Complete.')
         # reassign threads
         self.update_timer = QtCore.QTimer()
         self.update_timer.timeout.connect(self.updateActuals)
-        self.ctrl = control_models.ManualDAQ()
         self.ui.ctrlOpts.setCurrentIndex(0)
         self.updateControl()
         # cleanup and refersh GUI
@@ -171,8 +180,6 @@ class fredwin(QtWidgets.QMainWindow):
         self.ui.broadcastPeriodSet.setEnabled(True)
         self.ui.filepathSet.setEnabled(True)
         self.ui.dataLogCheck.setEnabled(True)
-        self.ui.initButton.setEnabled(False)
-        self.ui.stopoutButton.setEnabled(False)
 
     def logData(self, firstline=False):
         if firstline:
@@ -183,18 +190,17 @@ class fredwin(QtWidgets.QMainWindow):
                                 'Spool Wind Rate Actual (RPS)', 'Wind Direction (R/L)', 'Wind Count (#)',
                                 'Filament Diameter Actual (mm)','Total Fiber Produced (m)', 
                                 'Heater Current (mA)','Spool DC Motor Current (mA)','Stepper and 12V Current (mA)',
-                                
                                 'Total Power (W)', 'Total Energy Used (Wh)'])
         else:
             now = time.time()
             self.file_writer.writerow([now, now - self.log_timestamp, self.ctrl.htr_set_temp, self.ctrl.htr_set_pwr, 
                                 self.ctrl.feed_set_speed, self.ctrl.spool_set_speed, self.ctrl.spool_set_pwr,
                                 self.ctrl.wind_set_freq, self.ctrl.fiber_set_dia, 
-                                self.ctrl.htr_temp, self.ctrl.feed_speed, 
-                                self.ctrl.spool_speed, int(self.ctrl.wind_dir), self.ctrl.wind_count,
-                                self.ctrl.fiber_dia, self.ctrl.fiber_len, 
-                                self.ctrl.htr_current, self.ctrl.spool_current, self.ctrl.step_current,
-                                self.ctrl.sys_power, self.ctrl.sys_energy])
+                                self.ctrl.twin.htr_temp, self.ctrl.twin.feed_speed, 
+                                self.ctrl.twin.spool_speed, int(self.ctrl.twin.wind_dir), self.ctrl.twin.wind_count,
+                                self.ctrl.twin.fiber_dia, self.ctrl.twin.fiber_len, 
+                                self.ctrl.twin.htr_current, self.ctrl.twin.spool_current, self.ctrl.twin.step_current,
+                                self.ctrl.twin.sys_power, self.ctrl.twin.sys_energy])
     
     def mqttData(self):
         # TODO broadcast mqtt data
@@ -204,52 +210,119 @@ class fredwin(QtWidgets.QMainWindow):
         # TODO broadcast OPC data
         pass
 
+    def updatePlot(self):
+        self.xPlotVals = self.xPlotVals[1:]
+        self.xPlotVals.append(time.time() - self.plotTimestamp)
+        self.yPlotVals = self.yPlotVals[1:]
+        if self.ui.FibPlotChk.isChecked():
+            self.yPlotVals.append(self.ctrl.twin.fiber_dia)
+            self.plotLine.setData(self.xPlotVals, self.yPlotVals, pen=self.plotPen)
+        elif self.ui.HtrPlotChk.isChecked():
+            self.yPlotVals.append(self.ctrl.twin.htr_temp)
+            self.plotLine.setData(self.xPlotVals, self.yPlotVals, pen=self.plotPen)
+        elif self.ui.SpoolPlotChk.isChecked():
+            self.yPlotVals.append(self.ctrl.twin.spool_speed)
+            self.plotLine.setData(self.xPlotVals, self.yPlotVals, pen=self.plotPen)
+        self.ui.graphWidget.setXRange(self.xPlotVals[-1]-100.0,self.xPlotVals[-1])
+
     # GUI Updates
 
     def updateControl(self):
-        if (self.ui.ctrlOpts.currentText() == 'Manual Control'):
-            self.ctrl = control_models.ManualDAQ()
+        if ((self.ui.ctrlOpts.currentText() == 'Basic State Twin') or
+            (self.ui.ctrlOpts.currentText() == 'Regression State Twin')):
+            if self.ui.ctrlOpts.currentText() == 'Basic State Twin':
+                self.ctrl = control_models.ManualStateTwin(process_models.BasicStateTwin())
+            else:
+                self.ctrl = control_models.ManualStateTwin(process_models.RegressionStateTwin())
+            self.ui.filamentDutySet.setEnabled(False)
+            self.ui.filamentHeatSet.setEnabled(True)
+            self.ui.filamentHeatSet.setText('{0:.1f}'.format(self.ctrl.htr_set_temp))
+            self.ui.htrPIDCheck.setChecked(True)
+            self.ui.htrPIDCheck.setEnabled(False)
+            self.ui.htrP.setEnabled(False)
+            self.ui.htrI.setEnabled(False)
+            self.ui.htrD.setEnabled(False)
+            self.ui.htrPIDInterval.setEnabled(False)
+            self.ui.feedFWDCheck.setEnabled(False)
+            self.ui.filamentFeedSet.setEnabled(True)
+            self.ui.filamentFeedSet.setText('{0:.4f}'.format(self.ctrl.feed_set_speed))
+            self.ui.spoolFWDCheck.setEnabled(False)
+            self.ui.spoolDutySet.setEnabled(False)
+            self.ui.spoolWindSet.setEnabled(True)
+            self.ui.spoolWindSet.setText('{0:.3f}'.format(self.ctrl.spool_set_speed))
+            self.ui.spoolPIDCheck.setChecked(True)
+            self.ui.spoolPIDCheck.setEnabled(False)
+            self.ui.spoolP.setEnabled(False)
+            self.ui.spoolI.setEnabled(False)
+            self.ui.spoolD.setEnabled(False)
+            self.ui.spoolPIDInterval.setEnabled(False)
+            self.ui.windAutoCheck.setChecked(True)
+            self.ui.windAutoCheck.setEnabled(False)
+            self.ui.windRTCheck.setEnabled(False)
+            self.ui.windSet.setEnabled(False)
+            self.ui.autoDiaCheck.setChecked(False)
+            self.ui.filamentDiamSet.setEnabled(False)
+            self.ui.filamentDiamSet.setText('{0:.3f}'.format(self.ctrl.fiber_set_dia))
+            self.ui.fibP.setEnabled(False)
+            self.ui.fibI.setEnabled(False)
+            self.ui.fibD.setEnabled(False)
+            self.ui.fibPIDInterval.setEnabled(False)
+        elif (self.ui.ctrlOpts.currentText() == 'Regression Dynamic Twin'):
+            self.ctrl = control_models.ManualDynamicTwin(process_models.RegressionDynamicTwin())
             self.ui.htrPIDCheck.setChecked(False)
+            self.ui.htrPIDCheck.setEnabled(True)
             self.onHtrPIDChkCh()
             self.ui.spoolPIDCheck.setChecked(False)
+            self.ui.spoolPIDCheck.setEnabled(False)
             self.onSpoolPIDChkCh()
             self.ui.autoDiaCheck.setChecked(False)
+            # TODO - setup auto diameter
+            self.ui.autoDiaCheck.setEnabled(False)
             self.onFibPIDChkCh()
-            self.ui.htrSetButton.setEnabled(False)
-            self.ui.feedSetButton.setEnabled(False)
-            self.ui.spoolSetButton.setEnabled(False)
-            self.ui.windButton.setEnabled(False)
             self.ui.filamentDutySet.setText('{0:.3f}'.format(self.ctrl._htr_set_pwr))
             self.ui.filamentHeatSet.setText('{0:.1f}'.format(self.ctrl.htr_set_temp))
-            self.ui.htrP.setText('{0:.4f}'.format(self.ctrl.htrP))
-            self.ui.htrI.setText('{0:.4f}'.format(self.ctrl.htrI))
-            self.ui.htrD.setText('{0:.4f}'.format(self.ctrl.htrD))
+            self.ui.htrP.setText('{0:.5f}'.format(self.ctrl.htrP))
+            self.ui.htrI.setText('{0:.5f}'.format(self.ctrl.htrI))
+            self.ui.htrD.setText('{0:.5f}'.format(self.ctrl.htrD))
             self.ui.htrPIDInterval.setText('{0:.3f}'.format(self.ctrl.htrPIDint))
             self.ui.filamentFeedSet.setText('{0:.4f}'.format(self.ctrl.feed_set_speed))
             self.ui.spoolDutySet.setText('{0:.3f}'.format(self.ctrl.spool_set_pwr))
             self.ui.spoolWindSet.setText('{0:.3f}'.format(self.ctrl.spool_set_speed))
-            self.ui.spoolP.setText('{0:.4f}'.format(self.ctrl.spoolP))
-            self.ui.spoolI.setText('{0:.4f}'.format(self.ctrl.spoolI))
-            self.ui.spoolD.setText('{0:.4f}'.format(self.ctrl.spoolD))
+            self.ui.spoolP.setText('{0:.5f}'.format(self.ctrl.spoolP))
+            self.ui.spoolI.setText('{0:.5f}'.format(self.ctrl.spoolI))
+            self.ui.spoolD.setText('{0:.5f}'.format(self.ctrl.spoolD))
             self.ui.spoolPIDInterval.setText('{0:.3f}'.format(self.ctrl.spoolPIDint))
             self.ui.windSet.setText('{0:.3}'.format(self.ctrl.wind_set_freq))
             self.ui.filamentDiamSet.setText('{0:.3f}'.format(self.ctrl.fiber_set_dia))
-            self.ui.fibP.setText('{0:.4f}'.format(self.ctrl.fibP))
-            self.ui.fibI.setText('{0:.4f}'.format(self.ctrl.fibI))
-            self.ui.fibD.setText('{0:.4f}'.format(self.ctrl.fibD))
+            self.ui.fibP.setText('{0:.5f}'.format(self.ctrl.fibP))
+            self.ui.fibI.setText('{0:.5f}'.format(self.ctrl.fibI))
+            self.ui.fibD.setText('{0:.5f}'.format(self.ctrl.fibD))
             self.ui.fibPIDInterval.setText('{0:.3f}'.format(self.ctrl.fibPIDint))
         if (self.ui.ctrlOpts.currentIndex() != -1):
             self.ui.messageWindow.appendPlainText('Setting Control: ' +
                                     self.ui.ctrlOpts.currentText())
-
+            self.ui.htrSetButton.setEnabled(False)
+            self.ui.htrPIDSetButton.setEnabled(False)
+            self.ui.feedSetButton.setEnabled(False)
+            self.ui.spoolSetButton.setEnabled(False)
+            self.ui.spoolPIDButton.setEnabled(False)
+            self.ui.windButton.setEnabled(False)
+            self.ui.fiberSetButton.setEnabled(False)
+            self.ui.fiberPIDButton.setEnabled(False)
+            
     def updateActuals(self):
-        self.ui.filamentHeatAct.setText('{0:.1f}'.format(self.ctrl.htr_temp))
-        self.ui.filamentFeedAct.setText('{0:.4f}'.format(self.ctrl.feed_speed))
-        self.ui.spoolWindAct.setText('{0:.3f}'.format(self.ctrl.spool_speed))
-        self.ui.filamentDiamAct.setText('{0:.3f}'.format(self.ctrl.fiber_dia))
-        self.ui.filamentTotLen.setText('{0:.2f}'.format(self.ctrl.fiber_len))
-        self.ui.totPowerAct.setText('{0:.1f}'.format(self.ctrl.sys_power))
-        self.ui.totEnergyAct.setText('{0:.1f}'.format(self.ctrl.sys_energy))
+        self.ui.filamentHeatAct.setText('{0:.1f}'.format(self.ctrl.twin.htr_temp))
+        self.ui.filamentFeedAct.setText('{0:.4f}'.format(self.ctrl.twin.feed_speed))
+        self.ui.spoolWindAct.setText('{0:.3f}'.format(self.ctrl.twin.spool_speed))
+        self.ui.filamentDiamAct.setText('{0:.3f}'.format(self.ctrl.twin.fiber_dia))
+        self.ui.filamentTotLen.setText('{0:.2f}'.format(self.ctrl.twin.fiber_len))
+        self.ui.totPowerAct.setText('{0:.1f}'.format(self.ctrl.twin.sys_power))
+        self.ui.totEnergyAct.setText('{0:.1f}'.format(self.ctrl.twin.sys_energy))
+
+    def closeEvent(self, event):
+        # override to shut down threads gracefully
+        self.onStop()
+        event.accept()
 
     # Text Area Functions
 
@@ -282,21 +355,21 @@ class fredwin(QtWidgets.QMainWindow):
     def onFibPCh(self):
         try:
             fibP = float(self.ui.fibP.text())
-            self.ui.fibP.setText('{0:.4f}'.format(fibP))
+            self.ui.fibP.setText('{0:.5f}'.format(fibP))
         except ValueError:
             pass
     
     def onFibICh(self):
         try:
             fibI = float(self.ui.fibI.text())
-            self.ui.fibI.setText('{0:.4f}'.format(fibI))
+            self.ui.fibI.setText('{0:.5f}'.format(fibI))
         except ValueError:
             pass
 
     def onFibDCh(self):
         try:
             fibD = float(self.ui.fibD.text())
-            self.ui.fibD.setText('{0:.4f}'.format(fibD))
+            self.ui.fibD.setText('{0:.5f}'.format(fibD))
         except ValueError:
             pass
 
@@ -334,21 +407,21 @@ class fredwin(QtWidgets.QMainWindow):
     def onHtrPCh(self):
         try:
             htrP = float(self.ui.htrP.text())
-            self.ui.htrP.setText('{0:.4f}'.format(htrP))
+            self.ui.htrP.setText('{0:.5f}'.format(htrP))
         except ValueError:
             pass
     
     def onHtrICh(self):
         try:
             htrI = float(self.ui.htrI.text())
-            self.ui.htrI.setText('{0:.4f}'.format(htrI))
+            self.ui.htrI.setText('{0:.5f}'.format(htrI))
         except ValueError:
             pass
 
     def onHtrDCh(self):
         try:
             htrD = float(self.ui.htrD.text())
-            self.ui.htrD.setText('{0:.4f}'.format(htrD))
+            self.ui.htrD.setText('{0:.5f}'.format(htrD))
         except ValueError:
             pass
 
@@ -390,21 +463,21 @@ class fredwin(QtWidgets.QMainWindow):
     def onSpoolPCh(self):
         try:
             spoolP = float(self.ui.spoolP.text())
-            self.ui.spoolP.setText('{0:.4f}'.format(spoolP))
+            self.ui.spoolP.setText('{0:.5f}'.format(spoolP))
         except ValueError:
             pass
 
     def onSpoolICh(self):
         try:
             spoolI = float(self.ui.spoolI.text())
-            self.ui.spoolI.setText('{0:.4f}'.format(spoolI))
+            self.ui.spoolI.setText('{0:.5f}'.format(spoolI))
         except ValueError:
             pass
 
     def onSpoolDCh(self):
         try:
             spoolD = float(self.ui.spoolD.text())
-            self.ui.spoolD.setText('{0:.4f}'.format(spoolD))
+            self.ui.spoolD.setText('{0:.5f}'.format(spoolD))
         except ValueError:
             pass
 
@@ -426,6 +499,33 @@ class fredwin(QtWidgets.QMainWindow):
 
     # Check Box Functions
 
+    def onFibPlotChkCh(self):
+        if self.ui.FibPlotChk.isChecked():
+            if self.ui.SpoolPlotChk.isChecked():
+                self.ui.SpoolPlotChk.setChecked(False)
+                self.onSpoolPlotChkCh()
+            if self.ui.HtrPlotChk.isChecked():
+                self.ui.HtrPlotChk.setChecked(False)
+                self.onHtrPlotChkCh()
+            self.ui.graphWidget.setLabel('left', 'Fiber Diameter (mm)')
+            self.yPlotVals = [0] * 200
+            self.xPlotVals = [0] * 200
+            self.plotTimestamp = time.time()
+            self.xPlotVals = self.xPlotVals[1:]
+            self.xPlotVals.append(time.time() - self.plotTimestamp)
+            self.yPlotVals = self.yPlotVals[1:]
+            self.yPlotVals.append(self.ctrl.twin.fiber_dia)
+            self.plotPen = pyqtgraph.mkPen(color='r', width=4)
+            self.plotLine = self.ui.graphWidget.plot(self.xPlotVals, self.yPlotVals, pen=self.plotPen)
+            self.ui.graphWidget.setYRange(0.0,1.0)
+            self.ui.graphWidget.setXRange(self.xPlotVals[-1]-100.0, self.xPlotVals[-1])
+            self.plot_timer.start(self.outInterval * 1000.0)
+        else:
+            self.plot_timer.stop()
+            self.plot_timer = QtCore.QTimer()
+            self.plot_timer.timeout.connect(self.updatePlot)
+            self.ui.graphWidget.clear()
+
     def onHtrPIDChkCh(self):
         if self.ui.htrPIDCheck.isChecked():
             self.ui.htrP.setEnabled(True)
@@ -445,6 +545,33 @@ class fredwin(QtWidgets.QMainWindow):
             self.ui.filamentHeatSet.setEnabled(False)
             self.ui.htrPIDSetButton.setEnabled(False)
             self.ctrl.setHtrPID(False)
+
+    def onHtrPlotChkCh(self):
+        if self.ui.HtrPlotChk.isChecked():
+            if self.ui.SpoolPlotChk.isChecked():
+                self.ui.SpoolPlotChk.setChecked(False)
+                self.onSpoolPlotChkCh()
+            if self.ui.FibPlotChk.isChecked():
+                self.ui.FibPlotChk.setChecked(False)
+                self.onFibPlotChkCh()
+            self.ui.graphWidget.setLabel('left', 'Temperature (C)')
+            self.yPlotVals = [0] * 200
+            self.xPlotVals = [0] * 200
+            self.plotTimestamp = time.time()
+            self.xPlotVals = self.xPlotVals[1:]
+            self.xPlotVals.append(time.time() - self.plotTimestamp)
+            self.yPlotVals = self.yPlotVals[1:]
+            self.yPlotVals.append(self.ctrl.twin.htr_temp)
+            self.plotPen = pyqtgraph.mkPen(color='r', width=4)
+            self.plotLine = self.ui.graphWidget.plot(self.xPlotVals, self.yPlotVals, pen=self.plotPen)
+            self.ui.graphWidget.setYRange(0.0,120.0)
+            self.ui.graphWidget.setXRange(self.xPlotVals[-1]-100.0, self.xPlotVals[-1])
+            self.plot_timer.start(self.outInterval * 1000.0)
+        else:
+            self.plot_timer.stop()
+            self.plot_timer = QtCore.QTimer()
+            self.plot_timer.timeout.connect(self.updatePlot)
+            self.ui.graphWidget.clear()
 
     def onLogChkCh(self):
         if self.ui.dataLogCheck.isChecked(): # start logging
@@ -511,16 +638,52 @@ class fredwin(QtWidgets.QMainWindow):
             self.ui.spoolPIDButton.setEnabled(False)
             self.ctrl.setSpoolPID(False)
 
+    def onSpoolPlotChkCh(self):
+        if self.ui.SpoolPlotChk.isChecked():
+            if self.ui.HtrPlotChk.isChecked():
+                self.ui.HtrPlotChk.setChecked(False)
+                self.onHtrPlotChkCh()
+            if self.ui.FibPlotChk.isChecked():
+                self.ui.FibPlotChk.setChecked(False)
+                self.onFibPlotChkCh()
+            self.ui.graphWidget.setLabel('left', 'Spool Speed (RPS)')
+            self.yPlotVals = [0] * 200
+            self.xPlotVals = [0] * 200
+            self.plotTimestamp = time.time()
+            self.xPlotVals = self.xPlotVals[1:]
+            self.xPlotVals.append(time.time() - self.plotTimestamp)
+            self.yPlotVals = self.yPlotVals[1:]
+            self.yPlotVals.append(self.ctrl.twin.spool_speed)
+            self.plotPen = pyqtgraph.mkPen(color='r', width=4)
+            self.plotLine = self.ui.graphWidget.plot(self.xPlotVals, self.yPlotVals, pen=self.plotPen)
+            self.ui.graphWidget.setYRange(0.0,2.0)
+            self.ui.graphWidget.setXRange(self.xPlotVals[-1]-100.0, self.xPlotVals[-1])
+            self.plot_timer.start(self.outInterval * 1000.0)
+        else:
+            self.plot_timer.stop()
+            self.plot_timer = QtCore.QTimer()
+            self.plot_timer.timeout.connect(self.updatePlot)
+            self.ui.graphWidget.clear()
+
     def onFibPIDChkCh(self):
         if self.ui.autoDiaCheck.isChecked():
-            self.ui.fibP.setEnabled(True)
-            self.ui.fibI.setEnabled(True)
-            self.ui.fibD.setEnabled(True)
-            self.ui.fibPIDInterval.setEnabled(True)
-            self.ui.filamentDiamSet.setEnabled(True)
-            if self.ctrl.is_running:
-                self.ui.fiberPIDButton.setEnabled(True)
-                self.ui.fiberSetButton.setEnabled(True)
+            if ((self.ui.ctrlOpts.currentText() == 'Basic State Twin') or
+                (self.ui.ctrlOpts.currentText() == 'Regression State Twin')):
+                self.ctrl.calc_spool = True
+                self.ui.spoolWindSet.setEnabled(False)
+                self.ui.spoolSetButton.setEnabled(False)
+                self.ui.filamentDiamSet.setEnabled(True)
+                if self.ctrl.is_running:
+                    self.ui.fiberSetButton.setEnabled(True)
+            else:
+                self.ui.fibP.setEnabled(True)
+                self.ui.fibI.setEnabled(True)
+                self.ui.fibD.setEnabled(True)
+                self.ui.fibPIDInterval.setEnabled(True)
+                self.ui.filamentDiamSet.setEnabled(True)
+                if self.ctrl.is_running:
+                    self.ui.fiberPIDButton.setEnabled(True)
+                    self.ui.fiberSetButton.setEnabled(True)
         else:
             self.ui.fibP.setEnabled(False)
             self.ui.fibI.setEnabled(False)
@@ -529,18 +692,23 @@ class fredwin(QtWidgets.QMainWindow):
             self.ui.filamentDiamSet.setEnabled(False)
             self.ui.fiberPIDButton.setEnabled(False)
             self.ui.fiberSetButton.setEnabled(False)
-            self.ctrl.setFibPID(False)
+            if ((self.ui.ctrlOpts.currentText() == 'Basic State Twin') or
+                (self.ui.ctrlOpts.currentText() == 'Regression State Twin')):
+                self.ctrl.calc_spool = False
+                self.ui.filamentDiamSet.setEnabled(False)
+                self.ui.fiberSetButton.setEnabled(False)
+                self.ui.spoolWindSet.setEnabled(True)   
+                if self.ctrl.is_running:
+                    self.ui.spoolSetButton.setEnabled(True)
+            else:
+                pass
+                self.ctrl.setFibPID(False)
 
     # Button Functions
-
-    def onInit(self):
-        self.ctrl.sendInit()
 
     def onSetFeed(self):
         try:
             self.ctrl.feed_set_speed = float(self.ui.filamentFeedSet.text())
-            self.ctrl.feed_dir = self.ui.feedFWDCheck.isChecked()
-            self.ctrl.sendFeed()
             self.ui.messageWindow.appendPlainText('Setting feed speed to: {0:.4f}RPS'.format(self.ctrl.feed_set_speed)) 
         except ValueError:
             pass
@@ -548,6 +716,7 @@ class fredwin(QtWidgets.QMainWindow):
     def onSetFib(self):
         try:
             self.ctrl.fiber_set_dia = float(self.ui.filamentDiamSet.text())
+            self.ui.messageWindow.appendPlainText('Setting fiber diameter to: {0:.3f}mm'.format(self.ctrl.fiber_set_dia))
         except ValueError:
             pass
 
@@ -558,7 +727,7 @@ class fredwin(QtWidgets.QMainWindow):
             self.ctrl.fibD = float(self.ui.fibD.text())
             self.ctrl.fibPIDint = float(self.ui.fibPIDInterval.text())
             self.ctrl.setFibPID(True)
-            self.ui.messageWindow.appendPlainText('Setting fiber PID to: P={0:.4f}, I={1:.4f}, D={2:.4f}'.format(self.ctrl.fibP,self.ctrl.fibI,self.ctrl.fibD)) 
+            self.ui.messageWindow.appendPlainText('Setting fiber PID to: P={0:.5f}, I={1:.5f}, D={2:.5f}'.format(self.ctrl.fibP,self.ctrl.fibI,self.ctrl.fibD)) 
         except ValueError:
             pass
 
@@ -569,7 +738,6 @@ class fredwin(QtWidgets.QMainWindow):
                 self.ui.messageWindow.appendPlainText('Setting target heater temperature to: {0:.1f}C'.format(self.ctrl.htr_set_temp)) 
             else:
                 self.ctrl.htr_set_pwr = float(self.ui.filamentDutySet.text())
-                self.ctrl.sendHtr()
                 self.ui.messageWindow.appendPlainText('Setting target heater power to: {0:.3f}%'.format(self.ctrl.htr_set_pwr * 100)) 
         except ValueError:
                 pass
@@ -581,7 +749,7 @@ class fredwin(QtWidgets.QMainWindow):
             self.ctrl.htrD = float(self.ui.htrD.text())
             self.ctrl.htrPIDInt = float(self.ui.htrPIDInterval.text())
             self.ctrl.setHtrPID(True)
-            self.ui.messageWindow.appendPlainText('Setting heater PID to: P={0:.4f}, I={1:.4f}, D={2:.4f}'.format(self.ctrl.htrP,self.ctrl.htrI,self.ctrl.htrD)) 
+            self.ui.messageWindow.appendPlainText('Setting heater PID to: P={0:.5f}, I={1:.5f}, D={2:.5f}'.format(self.ctrl.htrP,self.ctrl.htrI,self.ctrl.htrD)) 
         except ValueError:
             pass
 
@@ -595,7 +763,6 @@ class fredwin(QtWidgets.QMainWindow):
                 self.ctrl.spool_set_pwr = float(self.ui.spoolDutySet.text())
                 # set nominal set speed
                 self.ctrl.spool_set_speed = 1.5 * self.ctrl.spool_set_pwr
-                self.ctrl.sendSpool()
                 self.ui.messageWindow.appendPlainText('Setting spool power to: {0:.3f}%'.format(self.ctrl.spool_set_pwr * 100)) 
         except ValueError:
             pass
@@ -607,7 +774,7 @@ class fredwin(QtWidgets.QMainWindow):
             self.ctrl.spoolD = float(self.ui.spoolD.text())
             self.ctrl.spoolPIDint = float(self.ui.spoolPIDInterval.text())
             self.ctrl.setSpoolPID(True)
-            self.ui.messageWindow.appendPlainText('Setting spool PID to: P={0:.4f}, I={1:.4f}, D={2:.4f}'.format(self.ctrl.spoolP,self.ctrl.spoolI,self.ctrl.spoolD)) 
+            self.ui.messageWindow.appendPlainText('Setting spool PID to: P={0:.5f}, I={1:.5f}, D={2:.5f}'.format(self.ctrl.spoolP,self.ctrl.spoolI,self.ctrl.spoolD)) 
         except ValueError:
             pass
 
@@ -624,9 +791,6 @@ class fredwin(QtWidgets.QMainWindow):
         except ValueError:
             pass
         
-    def onStopOutputs(self):
-        self.ctrl.sendStop()
-    
 if __name__ == "__main__":  
     logging.basicConfig(level=logging.INFO)
     #logging.basicConfig(level=logging.DEBUG)
