@@ -59,11 +59,12 @@ class ProcessTwin(threading.Thread):
         self.lock = threading.Lock()
 
         # FrED parameters
-        self.STEP_FEED_PITCH_D = 18.5       # mm
-        self.FIL_FEED_R = 3.5               # mm
-        self.NOZZLE_R = 1.5                 # mm
-        self.SPOOL_D = 20.0                 # mm
-        self.SPOOL_W = 40.0                 # mm    
+        self.STEP_FEED_PITCH_D = 18.5       # feed gear pitch diameter mm
+        self.FIL_FEED_R = 3.5               # feed stock diameter mm
+        self.NOZZLE_R = 1.5                 # extrusion nozzle radius mm
+        self.SPOOL_D = 20.0                 # spool starting diameter mm
+        self.SPOOL_W = 40.0                 # spool width mm
+        self.WIND_MM_P = 2.5                # wind travel microns per pulse    
         # "actuator" settings
         self._htr_pwr = 0.0                  # 0.0-1.0 (0.0-100.0%)
         self._feed_freq = 0.0                # steps/s
@@ -78,11 +79,13 @@ class ProcessTwin(threading.Thread):
         self._spool_current = 0.0            # mA
         self._step_current = 0.0             # mA
         self._sys_power = 0.0                # W
-        self.wind_dir = 0                   
-        self.wind_count = 1 
+        self.wind_dir = 0                    # wind direction 1=Right
+        self.wind_count = 1                  # number of filament windings on spool
         # accumulated values
         self._sys_energy = 0.0               # Wh
         self._fiber_len = 0.0                # mm
+        self.fiber_ave_dia = 0.0             # rolling average diameter mm
+        self.fiber_std_dia = 0.0            # rolling std dev (mm)
         # model parameters
         self.is_running = False             # bool
         self.interval = .1                  # sec
@@ -302,8 +305,8 @@ class BasicStateTwin(ProcessTwin):
     def model(self):
         # check for proper run conditions        
         if (self._htr_temp >= 75.0):
+            self._feed_speed = self._feed_freq / 3200.0
             if (self._feed_freq > 0.0):
-                self._feed_speed = self._feed_freq / 3200.0
                 if (self._spool_speed > 0.0):
                     self._fiber_dia = 6.73 * math.sqrt(self._feed_speed /
                                                         self._spool_speed)
@@ -345,8 +348,8 @@ class RegressionStateTwin(ProcessTwin):
     def model(self):
         # check for proper run conditions        
         if (self._htr_temp >= 75.0):
+            self._feed_speed = self._feed_freq / 3200.0
             if (self._feed_freq > 0.0):
-                self._feed_speed = self._feed_freq / 3200.0
                 if (self._spool_speed > 0.0):
                     self._fiber_dia = ((6.38896 * math.sqrt(self._feed_speed /
                                         self._spool_speed)) + .011145)
@@ -360,6 +363,9 @@ class RegressionStateTwin(ProcessTwin):
             self._feed_freq = 0.0
             self._feed_speed = 0.0
             self._fiber_dia = 0.0
+        self.fiber_std_dia = .11 * self.fiber_dia - .007
+        if self.fiber_std_dia < 0.0:
+            self.fiber_std_dia = 0.0
         # power consumption
         self._htr_current = ((34.1 * self._htr_temp) - 1188.0 + 
                                 ((self._feed_speed / .005) * 130.0))
@@ -480,7 +486,10 @@ class RegressionDynamicTwin(ProcessTwin):
         self.htr_pwr_delta = 0.0
         self.htr_pwr_cur = 0.0
         self.htr_pwr_ch_time = 0.0
-
+        self.spool_speed_target = 0.0
+        self.spool_tau_acc = .04            # sec
+        self.spool_tau_dec = .8653          # sec
+        self.spool_kp = 1.5                 # RPS
 
     # calculates a spool speed based on a desired fiber diameter
     def calc_spool_speed(self, feed = 0.0, fdia = 0.0):
@@ -516,12 +525,20 @@ class RegressionDynamicTwin(ProcessTwin):
         if self._htr_temp < 20.0:
             self._htr_temp = 20.0
         self.htr_temp_last = self._htr_temp
-        # TODO motor model
-        self._spool_speed = self._spool_pwr * 1.5
+        # motor model
+        self.spool_speed_target = self.spool_kp * self._spool_pwr
+        if self.spool_speed_target >= self._spool_speed:
+            # accelerating
+            tau = self.spool_tau_acc
+        else:
+            # decelerating
+            tau = self.spool_tau_dec
+        #print(self._spool_pwr)
+        self._spool_speed = math.exp(-(self.cur_time - self.prev_time) / tau) * (self._spool_speed - self.spool_speed_target) + self.spool_speed_target
         # check for proper run conditions
         if (self._htr_temp >= 75.0):
+            self._feed_speed = self._feed_freq / 3200.0
             if (self._feed_freq > 0.0):
-                self._feed_speed = self._feed_freq / 3200.0
                 if (self._spool_speed > 0.0):
                     # TODO fiber dynamic model
                     self._fiber_dia = (((6.38896 * math.sqrt(self._feed_speed /
@@ -545,8 +562,10 @@ class RegressionDynamicTwin(ProcessTwin):
             self._feed_freq = 0.0
             self._feed_speed = 0.0
             self._fiber_dia = 0.0
+        self.fiber_std_dia = .11 * self.fiber_dia - .007
+        if self.fiber_std_dia < 0.0:
+            self.fiber_std_dia = 0.0
         # power consumption
-        # TODO - replace with heater power?
         self._htr_current = self._htr_pwr * 6400.0
         self._spool_current = (self._spool_speed / 1.5) * 182.8
         self._step_current = 509.0

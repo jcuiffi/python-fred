@@ -14,6 +14,7 @@ import serial
 import threading
 import time
 import math
+import numpy as np
 
 class Control(threading.Thread):
     """
@@ -62,7 +63,10 @@ class Control(threading.Thread):
         self._htr_set_pwr = 0.0             # 0.0-1.0 (0.0-100.0%)
         self._feed_set_freq = 0.0           # steps/s
         self._spool_set_pwr = 0.0           # 0.0-1.0 (0.0-100.0%)
-        self.wind_set_freq = 0.0
+        self.wind_set_freq = 0.0            # PPS
+        self.fiber_ave_dia = 0.0            # rolling ave diameter
+        self.fiber_std_dia = 0.0            # rolling std dev
+        self.rolling_time = 60.0            # rolling time period sec
         # process parameters
         self.is_running = False             # bool
         self.interval = .1                  # sec
@@ -288,19 +292,21 @@ class ManualDynamicTwin(Control):
         self.twin = twin
         self.interval=.1           # sec
         # control parameters
-        self.htrP = 0.0             # .04
-        self.htrI = 0.0             # .0005
+        self.htrP = 0.02             # .02
+        self.htrI = 0.00005          # .0005
         self.htrD = 0.0
         self.htrPIDint = .5         # sec
         self.htrPID_last_time = 0.0
         self.tempPID = pid1()
+        self.tempPID.is_running = False
         self.tempPID.iomax = 1.0    # .3  
-        self.spoolP = 0.0           # .1
-        self.spoolI = 0.0           # .5
+        self.spoolP = 0.1           # .1
+        self.spoolI = 0.5           # .5
         self.spoolD = 0.0
         self.spoolPIDint = .25      # sec
         self.spoolPID_last_time = 0.0
         self.spoolPID = pid1()
+        self.spoolPID.is_running = False
         self.spool_cur_dia = 20.0   # mm
         self.wind_set_freq = 0.0
         self.wind_count = 1    
@@ -364,10 +370,10 @@ class ManualDynamicTwin(Control):
         
         if self.spoolPID.is_running:
             if time.time() > (self.spoolPID_last_time + self.spoolPIDint):
-                if self.spool_set_speed > 0.0:
-                    self.spool_set_pwr = self.spoolPID.calc_output(self.spoolP, self.spoolI, self.spoolD, 
+                self.spool_set_pwr = self.spoolPID.calc_output(self.spoolP, self.spoolI, self.spoolD, 
                                                     self.spool_set_speed,self.twin.spool_speed)
                 self.spoolPID_last_time = time.time()
+        #print(self._spool_set_pwr)
         self.twin.spool_pwr = self._spool_set_pwr
         
         if (self.twin.htr_temp >= 75.0):
@@ -447,6 +453,10 @@ class ManualDAQ(Control):
         self.fibPIDint = .5     # sec
         self.fibPID = pid1()
         self.ser = None         # serial connection to FrED
+        # rolling averages
+        self.roll_index = 0
+        self.roll_times = np.zeros(1200)  # should be enough to hold 60sec, .05refresh
+        self.fib_dias = np.zeros(1200)
         # current/actual values
         self.htr_temp = 0.0     # C
         self.feed_speed = 0.0   # RPS
@@ -633,7 +643,18 @@ class ManualDAQ(Control):
             self.fiber_len += (self.feed_speed * 2.848 * (time.time() - self.update_last_time)) / self.fiber_dia**2
         self.sys_power = (self.htr_current + self.spool_current + self.step_current) * .012
         self.sys_energy += self.sys_power * (time.time() - self.update_last_time) / 3600.0 
-        
+        self.roll_times[self.roll_index] = time.time()
+        if self.spool_speed > 0.0:
+            self.fib_dias[self.roll_index] = self.fiber_dia
+            self.fiber_ave_dia = np.mean(self.fib_dias[self.roll_times > (self.roll_times[self.roll_index] - self.rolling_time)])
+            self.fiber_std_dia = np.std(self.fib_dias[self.roll_times > (self.roll_times[self.roll_index] - self.rolling_time)])
+        else:
+            self.fib_dias[self.roll_index] = 0.0
+            self.fiber_ave_dia = 0.0
+            self.fiber_std_dia = 0.0
+        self.roll_index += 1
+        if self.roll_index >= self.roll_times.size:
+            self.roll_index = 0
         # update calculated outputs TODO fix delayed start
         if self.tempPID.is_running:
             if time.time() > (self.htrPID_last_time + self.htrPIDint):

@@ -20,6 +20,7 @@ import csv
 import time
 from datetime import datetime
 import pyqtgraph
+import paho.mqtt.client as mqtt
 
 class fredwin(QtWidgets.QMainWindow):
 
@@ -61,11 +62,16 @@ class fredwin(QtWidgets.QMainWindow):
         self.ui.broadcastPeriodSet.editingFinished.connect(self.onOutIntCh)
         self.ui.filepathRead.setText('./')
         self.ui.mqttTopic.setText('fred/twin/data')
+        self.mqttClient = 'FrED'
+        self.mqttHost = '192.168.1.21'
+        self.client = mqtt.Client(self.mqttClient)
+        self.client.on_connect = self.mqttConnect
+        self.client.connected_flag = False
         # check boxes
         self.ui.htrPIDCheck.stateChanged.connect(self.onHtrPIDChkCh)
         self.ui.spoolPIDCheck.stateChanged.connect(self.onSpoolPIDChkCh)
         self.ui.autoDiaCheck.stateChanged.connect(self.onFibPIDChkCh)
-        self.ui.broadcastMQTTCheck.setEnabled(False)
+        self.ui.broadcastMQTTCheck.setEnabled(True)
         self.ui.broadcastMQTTCheck.stateChanged.connect(self.onMqttCh)
         self.ui.broadcastOPCCheck.setEnabled(False)
         self.ui.windAutoCheck.stateChanged.connect(self.onSetWindAuto)
@@ -149,6 +155,12 @@ class fredwin(QtWidgets.QMainWindow):
             self.mqtt_timer.stop()
             self.mqtt_timer = QtCore.QTimer()
             self.mqtt_timer.timeout.connect(self.mqttData)
+            self.client.connected_flag = False
+            self.client.loop_stop()
+            self.client.disconnect()
+            self.client = mqtt.Client(self.mqttClient)
+            self.client.on_connect = self.mqttConnect
+            self.ui.mqttTopic.setEnabled(True)
         if self.log_timer.isActive():
             self.ui.messageWindow.appendPlainText('Stopping Data Log.')
             self.log_timer.stop()
@@ -202,9 +214,29 @@ class fredwin(QtWidgets.QMainWindow):
                                 self.ctrl.twin.htr_current, self.ctrl.twin.spool_current, self.ctrl.twin.step_current,
                                 self.ctrl.twin.sys_power, self.ctrl.twin.sys_energy])
     
+    def mqttConnect(self, client, userdata, flags, rc):
+        if rc==0:
+            self.client.connected_flag = True
+        else:
+            self.client.connected_flag = False
+
     def mqttData(self):
-        # TODO broadcast mqtt data
-        pass
+        if self.client.connected_flag == True:
+            self.client.publish(self.ui.mqttTopic.text(),(
+                '{ \"timestamp\": ' + str(time.time()) +
+                ', \"htr_C\": {0:.1f}'.format(self.ctrl.twin.htr_temp) + 
+                ', \"feed_RPS\": {0:.4f}'.format(self.ctrl.twin.feed_speed) +
+                ', \"spool_RPS\": {0:.3f}'.format(self.ctrl.twin.spool_speed) +
+                ', \"fiber_dia_mm\": {0:.3f}'.format(self.ctrl.twin.fiber_dia) +
+                ', \"fiber_dia_ave_mm\": {0:.3f}'.format(self.ctrl.twin.fiber_ave_dia) +
+                ', \"fiber_dia_std_mm\": {0:.3f}'.format(self.ctrl.twin.fiber_std_dia) +
+                ', \"fiber_len_m\": {0:.2f}'.format(self.ctrl.twin.fiber_len) +
+                ', \"power_W\": {0:.1f}'.format(self.ctrl.twin.sys_power) +
+                ', \"energy_Wh\": {0:.1f}'.format(self.ctrl.twin.sys_energy) + 
+                ', \"spool_mA\": {0:.1f}'.format(self.ctrl.twin.spool_current) +
+            ' }'))
+        else:
+            self.ui.messageWindow.appendPlainText('MQTT Not Connected.')
 
     def opcData(self):
         # TODO broadcast OPC data
@@ -273,7 +305,7 @@ class fredwin(QtWidgets.QMainWindow):
             self.ui.htrPIDCheck.setEnabled(True)
             self.onHtrPIDChkCh()
             self.ui.spoolPIDCheck.setChecked(False)
-            self.ui.spoolPIDCheck.setEnabled(False)
+            self.ui.spoolPIDCheck.setEnabled(True)
             self.onSpoolPIDChkCh()
             self.ui.autoDiaCheck.setChecked(False)
             # TODO - setup auto diameter
@@ -598,15 +630,23 @@ class fredwin(QtWidgets.QMainWindow):
 
     def onMqttCh(self):
         if self.ui.broadcastMQTTCheck.isChecked():
-            # TODO connection to broker
-            self.ui.messageWindow.appendPlainText('Starting MQTT Broadcast - Topic:' +
-                                                  self.ui.mqttTopic.text())
-            self.mqtt_timer.start(self.outInterval)
+            self.ui.mqttTopic.setEnabled(False)
+            self.ui.messageWindow.appendPlainText('Starting MQTT Broadcast - Broker: ' + self.mqttHost)
+            self.client.loop_start()
+            self.client.connect(self.mqttHost)
+            self.ui.messageWindow.appendPlainText('MQTT Client Name: ' + self.mqttClient + ' Topic: ' + self.ui.mqttTopic.text())
+            self.mqtt_timer.start(self.outInterval * 1000.0)
         else:
             self.ui.messageWindow.appendPlainText('Stopping MQTT Broadcast.')
             self.mqtt_timer.stop()
             self.mqtt_timer = QtCore.QTimer()
             self.mqtt_timer.timeout.connect(self.mqttData)
+            self.client.connected_flag = False
+            self.client.loop_stop()
+            self.client.disconnect()
+            self.client = mqtt.Client(self.mqttClient)
+            self.client.on_connect = self.mqttConnect
+            self.ui.mqttTopic.setEnabled(True)   
 
     def onSetWindAuto(self):
         if self.ui.windAutoCheck.isChecked():
