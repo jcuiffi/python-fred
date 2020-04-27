@@ -14,7 +14,7 @@ from PyQt5 import QtWidgets, QtCore
 from resources.fredmanGUIwin import Ui_MainWindow
 import logging
 import process_models
-import control_models
+import control
 import sys
 import csv
 import time
@@ -28,7 +28,7 @@ class fredwin(QtWidgets.QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         # set manual control as base model
-        self.ctrl = control_models.ManualDAQ()
+        self.ctrl = control.ManualDAQ()
         # add controls to drop down list
         self.ui.ctrlOpts.currentIndexChanged.connect(self.updateControl)
         self.ui.ctrlOpts.addItems(['Manual Control'])
@@ -170,7 +170,7 @@ class fredwin(QtWidgets.QMainWindow):
         # reassign threads
         self.update_timer = QtCore.QTimer()
         self.update_timer.timeout.connect(self.updateActuals)
-        self.ctrl = control_models.ManualDAQ()
+        self.ctrl = control.ManualDAQ()
         self.ui.ctrlOpts.setCurrentIndex(0)
         self.updateControl()
         # cleanup and refersh GUI
@@ -239,7 +239,7 @@ class fredwin(QtWidgets.QMainWindow):
 
     def updateControl(self):
         if (self.ui.ctrlOpts.currentText() == 'Manual Control'):
-            self.ctrl = control_models.ManualDAQ()
+            self.ctrl = control.ManualDAQ()
             self.ui.htrPIDCheck.setChecked(False)
             self.onHtrPIDChkCh()
             self.ui.spoolPIDCheck.setChecked(False)

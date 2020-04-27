@@ -63,7 +63,8 @@ class fredwin(QtWidgets.QMainWindow):
         self.ui.filepathRead.setText('./')
         self.ui.mqttTopic.setText('fred/twin/data')
         self.mqttClient = 'FrED'
-        self.mqttHost = '192.168.1.21'
+        self.mqttHost = 'localhost'
+        self.ui.mqttIP.setText(self.mqttHost)
         self.client = mqtt.Client(self.mqttClient)
         self.client.on_connect = self.mqttConnect
         self.client.connected_flag = False
@@ -144,7 +145,7 @@ class fredwin(QtWidgets.QMainWindow):
         if self.ui.ctrlOpts.currentText() == 'Regression Dynamic Twin':
             self.onHtrPIDChkCh()
             self.onSpoolPIDChkCh()
-            self.ui.windButton.setEnabled(True)
+            self.ui.windButton.setEnabled(False)
         self.ui.startButton.setEnabled(False)
         self.ui.ctrlOpts.setEnabled(False)
         self.ui.stopButton.setEnabled(True)
@@ -229,7 +230,7 @@ class fredwin(QtWidgets.QMainWindow):
                 ', \"spool_RPS\": {0:.3f}'.format(self.ctrl.twin.spool_speed) +
                 ', \"fiber_dia_mm\": {0:.3f}'.format(self.ctrl.twin.fiber_dia) +
                 ', \"fiber_dia_ave_mm\": {0:.3f}'.format(self.ctrl.twin.fiber_ave_dia) +
-                ', \"fiber_dia_std_mm\": {0:.3f}'.format(self.ctrl.twin.fiber_std_dia) +
+                ', \"fiber_dia_std_mm\": {0:.3f}'.format(self.ctrl.twin.fiber_dia_std) +
                 ', \"fiber_len_m\": {0:.2f}'.format(self.ctrl.twin.fiber_len) +
                 ', \"power_W\": {0:.1f}'.format(self.ctrl.twin.sys_power) +
                 ', \"energy_Wh\": {0:.1f}'.format(self.ctrl.twin.sys_energy) + 
@@ -307,6 +308,8 @@ class fredwin(QtWidgets.QMainWindow):
             self.ui.spoolPIDCheck.setChecked(False)
             self.ui.spoolPIDCheck.setEnabled(True)
             self.onSpoolPIDChkCh()
+            self.ui.windAutoCheck.setChecked(True)
+            self.ui.windAutoCheck.setEnabled(False)
             self.ui.autoDiaCheck.setChecked(False)
             # TODO - setup auto diameter
             self.ui.autoDiaCheck.setEnabled(False)
@@ -633,7 +636,7 @@ class fredwin(QtWidgets.QMainWindow):
             self.ui.mqttTopic.setEnabled(False)
             self.ui.messageWindow.appendPlainText('Starting MQTT Broadcast - Broker: ' + self.mqttHost)
             self.client.loop_start()
-            self.client.connect(self.mqttHost)
+            self.client.connect(self.ui.mqttIP.text())
             self.ui.messageWindow.appendPlainText('MQTT Client Name: ' + self.mqttClient + ' Topic: ' + self.ui.mqttTopic.text())
             self.mqtt_timer.start(self.outInterval * 1000.0)
         else:
@@ -837,7 +840,7 @@ if __name__ == "__main__":
     
     # below lines add scaling funcitnoality for high res screens
     QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
-    QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
+    #QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
 
     app = QtWidgets.QApplication([])
     win = fredwin()
