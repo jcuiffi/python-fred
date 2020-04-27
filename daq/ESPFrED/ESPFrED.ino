@@ -3,6 +3,7 @@
  * Started 3/17/20 J. Cuiffi
  */
 //#include <Adafruit_MAX31865.h>
+// note using a modified <Adafruit_MAX31856.h> to speed up reading - include .h and .cpp
 #include <Adafruit_MAX31856.h>
 #include <Adafruit_INA219.h>
 
@@ -53,6 +54,7 @@ unsigned long enc_interval = 25000;    // encoder read interval, usec
 float enc_pps = 0.0;                   // encoder speed, pulses/sec
 unsigned long enc_timestamp = 0;       // encoder read timestamp, usec
 int wind_count = 1;                    // current number of winding passes (starts at 1)
+bool is_winding_R = true;              // is the spool moving right
 // communication variables
 char command = '\0';                   // command character incoming from serial
 bool is_parsing = false;               // in the middle of reading a message string
@@ -76,6 +78,7 @@ void setup() {
   pinMode(stop_pin, INPUT_PULLUP);
   pinMode(wind_dir_pin, OUTPUT);
   digitalWrite(wind_dir_pin, HIGH);  // set to direction right
+  is_winding_R = true;
   
   // configure encoder interrupt  
   pinMode(enc_pinA, INPUT);
@@ -87,7 +90,6 @@ void setup() {
   //pt_100.begin(MAX31865_2WIRE);
   maxthermo.begin();
   maxthermo.setThermocoupleType(MAX31856_TCTYPE_T);
-  // note using a modified <Adafruit_MAX31856.h> to speed up reading - include .h and .cpp
   maxthermo.contconfig();
   // Attach INA219s I2C
   ina219_1.begin();
@@ -124,6 +126,7 @@ void loop() {
     ledcWriteTone(feed_ch, 0);
     ledcWriteTone(wind_ch, 0);
     digitalWrite(wind_dir_pin, HIGH);
+    is_winding_R = true;
     digitalWrite(feed_dir_pin, LOW);
     digitalWrite(spool_dir_pinA, LOW);
     digitalWrite(spool_dir_pinB, LOW);
@@ -132,12 +135,13 @@ void loop() {
   
   // check for spool limit switches and change direction
   if (digitalRead(lsw1_pin) == HIGH){  // on right
-    if (digitalRead(wind_dir_pin) == HIGH){  // increment wind count
+    if (is_winding_R == true){  // increment wind count
       wind_count += 1;
       digitalWrite(wind_dir_pin, LOW);
+      is_winding_R = false;
     }
   } else if (digitalRead(lsw2_pin) == HIGH){  // on left
-    if (digitalRead(wind_dir_pin) == LOW){  // increment wind count
+    if (is_winding_R == false){  // increment wind count
       if (is_initializing == true){  // stop at left limit switch
         ledcWriteTone(wind_ch, 0);
         is_initializing = false;
@@ -146,6 +150,7 @@ void loop() {
         wind_count += 1;   
       }
       digitalWrite(wind_dir_pin, HIGH);
+      is_winding_R = true;
     }
   }
   
@@ -193,6 +198,7 @@ void readserial(){
       ledcWriteTone(feed_ch, 0);
       ledcWriteTone(wind_ch, 0);
       digitalWrite(wind_dir_pin, HIGH);
+      is_winding_R = true;
       digitalWrite(feed_dir_pin, LOW);
       digitalWrite(spool_dir_pinA, LOW);
       digitalWrite(spool_dir_pinB, LOW);
@@ -202,6 +208,7 @@ void readserial(){
     } else if (command == 'I'){  // inititalize spool to home at 500 PPS
       is_initializing = true;
       digitalWrite(wind_dir_pin, LOW);
+      is_winding_R = false;
       ledcWriteTone(wind_ch, 500.0);
       command = '\0';
       is_parsing = false;
@@ -235,6 +242,11 @@ void readserial(){
     } else if (command == 'w'){  // receiving wind direction 1 = right
       tempchar = Serial.read();
       digitalWrite(wind_dir_pin, String(tempchar).toInt());
+      if (String(tempchar).toInt() == 1){
+        is_winding_R = true;
+      } else {
+        is_winding_R = false;
+      }
       is_parsing = false;
     } else if (command == 'W'){  // receiving wind B/F speed
       is_parsing = true;
@@ -289,7 +301,7 @@ void senddata(){
   Serial.print(",");
   Serial.print(ina219_3.getCurrent_mA() * 2.0);
   Serial.print(",");
-  Serial.print(digitalRead(wind_dir_pin));
+  Serial.print(is_winding_R);
   Serial.print(",");
   Serial.println(wind_count);
 }
