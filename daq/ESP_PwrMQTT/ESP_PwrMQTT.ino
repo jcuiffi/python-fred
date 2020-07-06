@@ -41,8 +41,8 @@ MqttClient mqtt(wifiClient); // create a mqt client object
 const char broker[] = "192.168.1.14";  // raspberry pi mosquitto broker
 int port = 1883;  // broker port
 // define message topics
-const char topic_cur[] = "/fred/cur_data";
-const char topic_pwr[] = "/fred/pwr_data";
+const char topic_cur[] = "/fred/log/pwr_data";
+const char topic_pwr[] = "/fred/data/sys_pwr";
 
 void setup() {
   // Start serial monitor

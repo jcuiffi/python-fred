@@ -2,6 +2,12 @@
 Data logging script for FrED process control by PLC. Pulls in MQTT data from
 the PLC  fred program and the ESP IoT power sensor setup. Uses async for
 efficency. 
+Note: MQTT Topics
+/fred/log/run_data - run data from PLC fred for logging
+/fred/log/pwr_data - run data from ESP IoT current sensors
+/fred/data/sys_pwr - system power data from ESP
+/fred/bypass/PV_data - data from PLC for bypass
+/fred/bypass/SP_data - data to PLC for bypass
 
 Started 7/3/20
 Author - J. Cuiffi, Penn State University
@@ -35,16 +41,16 @@ async def process_data():
     file_start_time = 0.0
     last_log_time = 0.0
     async with Client(broker_address) as client:
-        async with client.filtered_messages('/fred/#') as messages:
-            await client.subscribe('/fred/#')
+        async with client.filtered_messages('/fred/log/#') as messages:
+            await client.subscribe('/fred/log/#')
             async for message in messages:
-                if (message.topic == '/fred/cur_data'):
+                if (message.topic == '/fred/log/pwr_data'):
                     msg = json.loads(message.payload)
                     cur1_mA = msg['cur1']
                     cur2_mA = msg['cur2']
                     cur3_mA = msg['cur3']
                     pwr_W = msg['pwr']
-                elif (message.topic == '/fred/run_data'):
+                elif (message.topic == '/fred/log/run_data'):
                     timestamp = time.time()
                     if (timestamp > (last_log_time + new_file_interval)):
                         file_start_time = timestamp
@@ -68,7 +74,7 @@ async def process_data():
                             writer.writerow(header)
                         writer.writerow([timestamp, (timestamp - file_start_time),
                             (float(msg['Temp_SP']) / 10.0), (float(msg['Duty_Temp']) / 1000.0), msg['Feed_SP'], msg['Spool_SP'],
-                            (float(msg['Duty_Spool']) / 1000.0), msg['Wind_SP'], msg['Fib_Dia_SP'], (float(msg['Temp_PV']) / 10.0),
+                            (float(msg['Duty_Spool']) / 1000.0), msg['Wind_SP'], (float(msg['Fib_Dia_SP']) / 1000.0), (float(msg['Temp_PV']) / 10.0),
                             msg['Feed_SP'], msg['Spool_PV'], int(msg['Wind_Dir']),
                             msg['Wind_Count'], msg['Fib_Dia_PV'], msg['Fib_Len'],
                             cur2_mA, cur1_mA, cur3_mA, pwr_W, energy ])
