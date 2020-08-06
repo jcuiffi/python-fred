@@ -1,0 +1,716 @@
+[
+    {
+        "id": "a572ebdd.8de238",
+        "type": "tab",
+        "label": "FrED",
+        "disabled": false,
+        "info": ""
+    },
+    {
+        "id": "5a31a152.09009",
+        "type": "mqtt in",
+        "z": "a572ebdd.8de238",
+        "name": "ESP Power Data",
+        "topic": "/fred/log/pwr_data",
+        "qos": "0",
+        "datatype": "json",
+        "broker": "8700f02e.6df5d",
+        "x": 100,
+        "y": 40,
+        "wires": [
+            [
+                "f2564245.8c9e9",
+                "4f40ef1b.57904",
+                "eaf78c76.caf9a",
+                "8e3ddf46.f2d8f",
+                "4738e369.4020ec"
+            ]
+        ]
+    },
+    {
+        "id": "f2564245.8c9e9",
+        "type": "debug",
+        "z": "a572ebdd.8de238",
+        "name": "",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 370,
+        "y": 40,
+        "wires": []
+    },
+    {
+        "id": "4f40ef1b.57904",
+        "type": "change",
+        "z": "a572ebdd.8de238",
+        "name": "Current Sensor 1 (mA)",
+        "rules": [
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "payload.cur1",
+                "tot": "msg"
+            },
+            {
+                "t": "set",
+                "p": "topic",
+                "pt": "msg",
+                "to": "Spool",
+                "tot": "str"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 400,
+        "y": 80,
+        "wires": [
+            [
+                "583776d0.5104d8",
+                "3b400667.a32f7a"
+            ]
+        ]
+    },
+    {
+        "id": "583776d0.5104d8",
+        "type": "debug",
+        "z": "a572ebdd.8de238",
+        "name": "",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 610,
+        "y": 40,
+        "wires": []
+    },
+    {
+        "id": "eaf78c76.caf9a",
+        "type": "change",
+        "z": "a572ebdd.8de238",
+        "name": "Current Sensor 2 (mA)",
+        "rules": [
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "payload.cur2",
+                "tot": "msg"
+            },
+            {
+                "t": "set",
+                "p": "topic",
+                "pt": "msg",
+                "to": "Heater",
+                "tot": "str"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 400,
+        "y": 120,
+        "wires": [
+            [
+                "3b400667.a32f7a"
+            ]
+        ]
+    },
+    {
+        "id": "8e3ddf46.f2d8f",
+        "type": "change",
+        "z": "a572ebdd.8de238",
+        "name": "Current Sensor 3 (mA)",
+        "rules": [
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "payload.cur3",
+                "tot": "msg"
+            },
+            {
+                "t": "set",
+                "p": "topic",
+                "pt": "msg",
+                "to": "Steppers",
+                "tot": "str"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 400,
+        "y": 160,
+        "wires": [
+            [
+                "3b400667.a32f7a"
+            ]
+        ]
+    },
+    {
+        "id": "4738e369.4020ec",
+        "type": "change",
+        "z": "a572ebdd.8de238",
+        "name": "System Power (W)",
+        "rules": [
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "payload.pwr",
+                "tot": "msg"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 390,
+        "y": 200,
+        "wires": [
+            [
+                "53229c4b.004464"
+            ]
+        ]
+    },
+    {
+        "id": "3b400667.a32f7a",
+        "type": "ui_chart",
+        "z": "a572ebdd.8de238",
+        "name": "",
+        "group": "5c5c2dd7.65dbd4",
+        "order": 8,
+        "width": 0,
+        "height": 0,
+        "label": "System Current (mA)",
+        "chartType": "bar",
+        "legend": "false",
+        "xformat": "HH:mm:ss",
+        "interpolate": "linear",
+        "nodata": "",
+        "dot": false,
+        "ymin": "0",
+        "ymax": "7000",
+        "removeOlder": 1,
+        "removeOlderPoints": "",
+        "removeOlderUnit": "3600",
+        "cutout": 0,
+        "useOneColor": false,
+        "useUTC": false,
+        "colors": [
+            "#1f77b4",
+            "#aec7e8",
+            "#ff7f0e",
+            "#2ca02c",
+            "#98df8a",
+            "#d62728",
+            "#ff9896",
+            "#9467bd",
+            "#c5b0d5"
+        ],
+        "useOldStyle": false,
+        "outputs": 1,
+        "x": 640,
+        "y": 80,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "53229c4b.004464",
+        "type": "ui_gauge",
+        "z": "a572ebdd.8de238",
+        "name": "",
+        "group": "5c5c2dd7.65dbd4",
+        "order": 7,
+        "width": 0,
+        "height": 0,
+        "gtype": "gage",
+        "title": "System Power (W)",
+        "label": "W",
+        "format": "{{value}}",
+        "min": 0,
+        "max": "100",
+        "colors": [
+            "#00b500",
+            "#e6e600",
+            "#ca3838"
+        ],
+        "seg1": "",
+        "seg2": "",
+        "x": 630,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "175458f6.b7aae7",
+        "type": "mqtt in",
+        "z": "a572ebdd.8de238",
+        "name": "PLC Run Data",
+        "topic": "/fred/log/run_data",
+        "qos": "0",
+        "datatype": "json",
+        "broker": "8700f02e.6df5d",
+        "x": 100,
+        "y": 240,
+        "wires": [
+            [
+                "ccbf208a.96e17",
+                "af9e5eac.fb02b",
+                "34fc6416.4a01cc",
+                "83bb44de.e5dd28",
+                "ddd2fd61.11c36",
+                "3347aa83.e50196"
+            ]
+        ]
+    },
+    {
+        "id": "ccbf208a.96e17",
+        "type": "debug",
+        "z": "a572ebdd.8de238",
+        "name": "",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 370,
+        "y": 240,
+        "wires": []
+    },
+    {
+        "id": "af9e5eac.fb02b",
+        "type": "change",
+        "z": "a572ebdd.8de238",
+        "name": "Fiber Diameter (mm)",
+        "rules": [
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "payload.Fib_Dia_PV",
+                "tot": "msg"
+            },
+            {
+                "t": "set",
+                "p": "topic",
+                "pt": "msg",
+                "to": "Fiber Diameter",
+                "tot": "str"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 400,
+        "y": 360,
+        "wires": [
+            [
+                "ee26d456.ddae78",
+                "3638a58f.27341a"
+            ]
+        ]
+    },
+    {
+        "id": "ee26d456.ddae78",
+        "type": "ui_chart",
+        "z": "a572ebdd.8de238",
+        "name": "",
+        "group": "5c5c2dd7.65dbd4",
+        "order": 2,
+        "width": 0,
+        "height": 0,
+        "label": "Fiber Diameter (mm)",
+        "chartType": "line",
+        "legend": "false",
+        "xformat": "HH:mm:ss",
+        "interpolate": "linear",
+        "nodata": "",
+        "dot": false,
+        "ymin": "0",
+        "ymax": ".7",
+        "removeOlder": "10",
+        "removeOlderPoints": "",
+        "removeOlderUnit": "60",
+        "cutout": 0,
+        "useOneColor": false,
+        "useUTC": false,
+        "colors": [
+            "#1f77b4",
+            "#aec7e8",
+            "#ff7f0e",
+            "#2ca02c",
+            "#98df8a",
+            "#d62728",
+            "#ff9896",
+            "#9467bd",
+            "#c5b0d5"
+        ],
+        "useOldStyle": false,
+        "outputs": 1,
+        "x": 640,
+        "y": 360,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "3638a58f.27341a",
+        "type": "ui_text",
+        "z": "a572ebdd.8de238",
+        "group": "5c5c2dd7.65dbd4",
+        "order": 3,
+        "width": 0,
+        "height": 0,
+        "name": "",
+        "label": "Diameter (mm)",
+        "format": "{{msg.payload}}",
+        "layout": "row-center",
+        "x": 620,
+        "y": 400,
+        "wires": []
+    },
+    {
+        "id": "34fc6416.4a01cc",
+        "type": "switch",
+        "z": "a572ebdd.8de238",
+        "name": "Wind Status",
+        "property": "payload.Wind_SP",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "eq",
+                "v": "0",
+                "vt": "num"
+            },
+            {
+                "t": "gt",
+                "v": "0",
+                "vt": "num"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 2,
+        "x": 370,
+        "y": 280,
+        "wires": [
+            [
+                "2cf925e0.e9d2da"
+            ],
+            [
+                "cf0f7d9b.130e1"
+            ]
+        ]
+    },
+    {
+        "id": "2cf925e0.e9d2da",
+        "type": "change",
+        "z": "a572ebdd.8de238",
+        "name": "Set Idle",
+        "rules": [
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "Idle",
+                "tot": "str"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 540,
+        "y": 280,
+        "wires": [
+            [
+                "cd01cde9.6b771"
+            ]
+        ]
+    },
+    {
+        "id": "cf0f7d9b.130e1",
+        "type": "change",
+        "z": "a572ebdd.8de238",
+        "name": "Set Winding",
+        "rules": [
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "Winding",
+                "tot": "str"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 550,
+        "y": 320,
+        "wires": [
+            [
+                "cd01cde9.6b771"
+            ]
+        ]
+    },
+    {
+        "id": "cd01cde9.6b771",
+        "type": "ui_text",
+        "z": "a572ebdd.8de238",
+        "group": "5c5c2dd7.65dbd4",
+        "order": 1,
+        "width": 0,
+        "height": 0,
+        "name": "",
+        "label": "Status:",
+        "format": "{{msg.payload}}",
+        "layout": "row-center",
+        "x": 710,
+        "y": 280,
+        "wires": []
+    },
+    {
+        "id": "83bb44de.e5dd28",
+        "type": "change",
+        "z": "a572ebdd.8de238",
+        "name": "Feed Speed (RPS)",
+        "rules": [
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "payload.Feed_SP",
+                "tot": "msg"
+            },
+            {
+                "t": "set",
+                "p": "topic",
+                "pt": "msg",
+                "to": "Feed Speed",
+                "tot": "str"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 390,
+        "y": 440,
+        "wires": [
+            [
+                "b1975ccc.2df91"
+            ]
+        ]
+    },
+    {
+        "id": "ddd2fd61.11c36",
+        "type": "change",
+        "z": "a572ebdd.8de238",
+        "name": "Spool Speed (RPS)",
+        "rules": [
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "payload.Spool_PV",
+                "tot": "msg"
+            },
+            {
+                "t": "set",
+                "p": "topic",
+                "pt": "msg",
+                "to": "SpoolSpeed",
+                "tot": "str"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 390,
+        "y": 480,
+        "wires": [
+            [
+                "d74f7368.a8dbb"
+            ]
+        ]
+    },
+    {
+        "id": "b1975ccc.2df91",
+        "type": "ui_text",
+        "z": "a572ebdd.8de238",
+        "group": "5c5c2dd7.65dbd4",
+        "order": 4,
+        "width": 0,
+        "height": 0,
+        "name": "",
+        "label": "Feed Speed (RPS)",
+        "format": "{{msg.payload}}",
+        "layout": "row-center",
+        "x": 630,
+        "y": 440,
+        "wires": []
+    },
+    {
+        "id": "d74f7368.a8dbb",
+        "type": "ui_text",
+        "z": "a572ebdd.8de238",
+        "group": "5c5c2dd7.65dbd4",
+        "order": 5,
+        "width": 0,
+        "height": 0,
+        "name": "",
+        "label": "Spool Speed (RPS)",
+        "format": "{{msg.payload}}",
+        "layout": "row-center",
+        "x": 630,
+        "y": 480,
+        "wires": []
+    },
+    {
+        "id": "3347aa83.e50196",
+        "type": "change",
+        "z": "a572ebdd.8de238",
+        "name": "Heater Temp (C)",
+        "rules": [
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "payload.Temp_PV",
+                "tot": "msg"
+            },
+            {
+                "t": "set",
+                "p": "topic",
+                "pt": "msg",
+                "to": "Temperature",
+                "tot": "str"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 380,
+        "y": 520,
+        "wires": [
+            [
+                "da6ff79.d67fb08"
+            ]
+        ]
+    },
+    {
+        "id": "5ba73c56.ebca34",
+        "type": "ui_gauge",
+        "z": "a572ebdd.8de238",
+        "name": "",
+        "group": "5c5c2dd7.65dbd4",
+        "order": 6,
+        "width": 0,
+        "height": 0,
+        "gtype": "gage",
+        "title": "Heater Temperature (C)",
+        "label": "C",
+        "format": "{{value}}",
+        "min": 0,
+        "max": "100",
+        "colors": [
+            "#00b500",
+            "#e6e600",
+            "#ca3838"
+        ],
+        "seg1": "75",
+        "seg2": "95",
+        "x": 810,
+        "y": 520,
+        "wires": []
+    },
+    {
+        "id": "da6ff79.d67fb08",
+        "type": "function",
+        "z": "a572ebdd.8de238",
+        "name": "Unit Conversion",
+        "func": "msg.payload = msg.payload / 10.0\nreturn msg;",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "x": 580,
+        "y": 520,
+        "wires": [
+            [
+                "5ba73c56.ebca34"
+            ]
+        ]
+    },
+    {
+        "id": "8700f02e.6df5d",
+        "type": "mqtt-broker",
+        "z": "",
+        "name": "RaspPi4",
+        "broker": "192.168.1.14",
+        "port": "1883",
+        "clientid": "",
+        "usetls": false,
+        "compatmode": false,
+        "keepalive": "60",
+        "cleansession": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthPayload": "",
+        "closeTopic": "",
+        "closeQos": "0",
+        "closePayload": "",
+        "willTopic": "",
+        "willQos": "0",
+        "willPayload": ""
+    },
+    {
+        "id": "5c5c2dd7.65dbd4",
+        "type": "ui_group",
+        "z": "",
+        "name": "FrED Process Data",
+        "tab": "d429f9cb.5b3f48",
+        "order": 1,
+        "disp": true,
+        "width": "6",
+        "collapse": false
+    },
+    {
+        "id": "d429f9cb.5b3f48",
+        "type": "ui_tab",
+        "z": "",
+        "name": "FrED Dashboard",
+        "icon": "dashboard",
+        "disabled": false,
+        "hidden": false
+    }
+]

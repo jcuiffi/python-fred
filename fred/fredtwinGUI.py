@@ -61,8 +61,8 @@ class fredwin(QtWidgets.QMainWindow):
         self.ui.broadcastPeriodSet.setText('1.000')
         self.ui.broadcastPeriodSet.editingFinished.connect(self.onOutIntCh)
         self.ui.filepathRead.setText('./')
-        self.ui.mqttTopic.setText('fred/twin/data')
-        self.mqttClient = 'FrED'
+        self.ui.mqttTopic.setText('/fred/data/twin')
+        self.mqttClient = 'FrED Twin'
         self.mqttHost = 'localhost'
         self.ui.mqttIP.setText(self.mqttHost)
         self.client = mqtt.Client(self.mqttClient)
@@ -223,11 +223,13 @@ class fredwin(QtWidgets.QMainWindow):
 
     def mqttData(self):
         if self.client.connected_flag == True:
+            # builing JSON manually to control sig figs
             self.client.publish(self.ui.mqttTopic.text(),(
                 '{ \"timestamp\": ' + str(time.time()) +
                 ', \"htr_C\": {0:.1f}'.format(self.ctrl.twin.htr_temp) + 
                 ', \"feed_RPS\": {0:.4f}'.format(self.ctrl.twin.feed_speed) +
                 ', \"spool_RPS\": {0:.3f}'.format(self.ctrl.twin.spool_speed) +
+                ', \"wind_PPS\": {0:.2f}'.format(self.ctrl.wind_set_freq) +
                 ', \"fiber_dia_mm\": {0:.3f}'.format(self.ctrl.twin.fiber_dia) +
                 ', \"fiber_dia_ave_mm\": {0:.3f}'.format(self.ctrl.twin.fiber_ave_dia) +
                 ', \"fiber_dia_std_mm\": {0:.3f}'.format(self.ctrl.twin.fiber_dia_std) +
@@ -634,9 +636,10 @@ class fredwin(QtWidgets.QMainWindow):
     def onMqttCh(self):
         if self.ui.broadcastMQTTCheck.isChecked():
             self.ui.mqttTopic.setEnabled(False)
-            self.ui.messageWindow.appendPlainText('Starting MQTT Broadcast - Broker: ' + self.mqttHost)
             self.client.loop_start()
-            self.client.connect(self.ui.mqttIP.text())
+            self.mqttHost = self.ui.mqttIP.text()
+            self.client.connect(self.mqttHost)
+            self.ui.messageWindow.appendPlainText('Starting MQTT Broadcast - Broker: ' + self.mqttHost)
             self.ui.messageWindow.appendPlainText('MQTT Client Name: ' + self.mqttClient + ' Topic: ' + self.ui.mqttTopic.text())
             self.mqtt_timer.start(self.outInterval * 1000.0)
         else:
