@@ -28,13 +28,13 @@ class fredwin(QtWidgets.QMainWindow):
         super(fredwin,self).__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-        # set basic state twin as base model
+        # set Basic Analytical State Twin as base model
         self.ctrl = control_models.ManualStateTwin(process_models.BasicStateTwin())
         # add models to drop down list
         self.ui.ctrlOpts.currentIndexChanged.connect(self.updateControl)
-        self.ui.ctrlOpts.addItems(['Basic State Twin',
-                                   'Regression State Twin',
-                                   'Regression Dynamic Twin'])
+        self.ui.ctrlOpts.addItems(['Basic Analytical State Twin',
+                                   'Empirical State Twin',
+                                   'Empirical Dynamic Twin'])
         self.ui.ctrlOpts.setCurrentIndex(0)
         # text elements
         self.ui.controlInterval.setText('0.500')
@@ -142,7 +142,7 @@ class fredwin(QtWidgets.QMainWindow):
         self.ui.feedSetButton.setEnabled(True)
         self.ui.spoolSetButton.setEnabled(True)
         self.onFibPIDChkCh()
-        if self.ui.ctrlOpts.currentText() == 'Regression Dynamic Twin':
+        if self.ui.ctrlOpts.currentText() == 'Empirical Dynamic Twin':
             self.onHtrPIDChkCh()
             self.onSpoolPIDChkCh()
             self.ui.windButton.setEnabled(False)
@@ -237,6 +237,8 @@ class fredwin(QtWidgets.QMainWindow):
                 ', \"power_W\": {0:.1f}'.format(self.ctrl.twin.sys_power) +
                 ', \"energy_Wh\": {0:.1f}'.format(self.ctrl.twin.sys_energy) + 
                 ', \"spool_mA\": {0:.1f}'.format(self.ctrl.twin.spool_current) +
+                ', \"heater_mA\": {0:.1f}'.format(self.ctrl.twin.htr_current) +
+                ', \"stepper_mA\": {0:.1f}'.format(self.ctrl.twin.step_current) +
             ' }'))
         else:
             self.ui.messageWindow.appendPlainText('MQTT Not Connected.')
@@ -263,9 +265,9 @@ class fredwin(QtWidgets.QMainWindow):
     # GUI Updates
 
     def updateControl(self):
-        if ((self.ui.ctrlOpts.currentText() == 'Basic State Twin') or
-            (self.ui.ctrlOpts.currentText() == 'Regression State Twin')):
-            if self.ui.ctrlOpts.currentText() == 'Basic State Twin':
+        if ((self.ui.ctrlOpts.currentText() == 'Basic Analytical State Twin') or
+            (self.ui.ctrlOpts.currentText() == 'Empirical State Twin')):
+            if self.ui.ctrlOpts.currentText() == 'Basic Analytical State Twin':
                 self.ctrl = control_models.ManualStateTwin(process_models.BasicStateTwin())
             else:
                 self.ctrl = control_models.ManualStateTwin(process_models.RegressionStateTwin())
@@ -302,7 +304,7 @@ class fredwin(QtWidgets.QMainWindow):
             self.ui.fibI.setEnabled(False)
             self.ui.fibD.setEnabled(False)
             self.ui.fibPIDInterval.setEnabled(False)
-        elif (self.ui.ctrlOpts.currentText() == 'Regression Dynamic Twin'):
+        elif (self.ui.ctrlOpts.currentText() == 'Empirical Dynamic Twin'):
             self.ctrl = control_models.ManualDynamicTwin(process_models.RegressionDynamicTwin())
             self.ui.htrPIDCheck.setChecked(False)
             self.ui.htrPIDCheck.setEnabled(True)
@@ -713,8 +715,8 @@ class fredwin(QtWidgets.QMainWindow):
 
     def onFibPIDChkCh(self):
         if self.ui.autoDiaCheck.isChecked():
-            if ((self.ui.ctrlOpts.currentText() == 'Basic State Twin') or
-                (self.ui.ctrlOpts.currentText() == 'Regression State Twin')):
+            if ((self.ui.ctrlOpts.currentText() == 'Basic Analytical State Twin') or
+                (self.ui.ctrlOpts.currentText() == 'Empirical State Twin')):
                 self.ctrl.calc_spool = True
                 self.ui.spoolWindSet.setEnabled(False)
                 self.ui.spoolSetButton.setEnabled(False)
@@ -738,8 +740,8 @@ class fredwin(QtWidgets.QMainWindow):
             self.ui.filamentDiamSet.setEnabled(False)
             self.ui.fiberPIDButton.setEnabled(False)
             self.ui.fiberSetButton.setEnabled(False)
-            if ((self.ui.ctrlOpts.currentText() == 'Basic State Twin') or
-                (self.ui.ctrlOpts.currentText() == 'Regression State Twin')):
+            if ((self.ui.ctrlOpts.currentText() == 'Basic Analytical State Twin') or
+                (self.ui.ctrlOpts.currentText() == 'Empirical State Twin')):
                 self.ctrl.calc_spool = False
                 self.ui.filamentDiamSet.setEnabled(False)
                 self.ui.fiberSetButton.setEnabled(False)

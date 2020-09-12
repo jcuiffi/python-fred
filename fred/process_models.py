@@ -530,13 +530,13 @@ class RegressionStateTwin(ProcessTwin):
             self._feed_freq = 0.0
             self._feed_speed = 0.0
             self._fiber_dia = 0.0
-        self.fiber_std_dia = .11 * self.fiber_dia - .007
-        if self.fiber_std_dia < 0.0:
-            self.fiber_std_dia = 0.0
+        self._fiber_dia_std = .11 * self._fiber_dia - .007
+        if self._fiber_dia_std < 0.0:
+            self._fiber_dia_std = 0.0
         # power consumption
-        self._htr_current = ((34.1 * self._htr_temp) - 1188.0 + 
+        self._htr_current = ((34.1 * self._htr_temp) - 1288.0 + 
                                 ((self._feed_speed / .005) * 130.0))
-        self._spool_current = (self._spool_speed / 1.5) * 182.8
+        self._spool_current = (self._spool_speed / 1.5) * 182.0 + 15.0
         self._step_current = 509.0
         self._sys_power = (self._htr_current + self._spool_current + self._step_current) * .012
         self._sys_energy += self._sys_power * (self.cur_time - self.prev_time) / 3600.0
